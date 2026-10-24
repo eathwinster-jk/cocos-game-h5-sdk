@@ -53,4 +53,7 @@ python3 -m http.server 8090
 # 浏览器打开 http://localhost:8090/demo/index.html
 ```
 
-`http://localhost:8090` 已在测试环境白名单中；直接双击打开 HTML（`file://`）无法嵌入。
+测试环境白名单已登记 `http://localhost:8090`、`http://localhost:9560`，本地联调页面用这两个端口启动即可。
+
+- 白名单按「协议 + 域名 + 端口」完全匹配，`127.0.0.1`、局域网 IP、其他端口需单独登记。
+- 直接双击打开 HTML（`file://`）无法嵌入。
