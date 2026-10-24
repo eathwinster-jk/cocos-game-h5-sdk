@@ -43,6 +43,8 @@
     </div>
     <label for="DialogScope">弹窗范围</label>
     <select id="DialogScope"><option value="game">游戏区域内</option><option value="fullscreen">弹窗时全屏</option></select>
+    <span>宿主弹窗</span>
+    <div><label><input id="DisableHostDialogs" type="checkbox"> 手机竖屏也用游戏内弹窗</label></div>
     <span>弹窗遮罩</span>
     <div>
       <input id="MaskColor" placeholder="#000000" size="8">
@@ -98,6 +100,7 @@
       dialogScope: readValue('DialogScope'),
       dialogMask: readDialogMask(),
       onDialogChange(isVisible) { appendLog(isVisible ? '游戏弹窗打开' : '游戏弹窗关闭'); },
+      hostDialogs: !isChecked('DisableHostDialogs'),
       showBackButton: !isChecked('HideBack'),
       showFullscreenButton: !isChecked('HideFullscreen'),
       onFullscreenRequest: isChecked('CustomFullscreen') ? toggleContainerFullscreen : undefined,

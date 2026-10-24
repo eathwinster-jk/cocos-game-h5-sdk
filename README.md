@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.9/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.10/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -38,6 +38,14 @@
 ```
 
 宿主页面域名需加入游戏白名单后才能嵌入，请联系我们登记域名。
+
+## 手机竖屏宿主弹窗（0.1.10）
+
+手机竖屏内嵌时，下注卡片、记录与规则、退出确认由 SDK 在宿主页面上展示（与 Android / iOS SDK 一致），全屏仍用游戏内弹窗，默认开启：
+
+- `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
+- `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
+- 下注卡片插入在游戏容器正下方，请为其预留约 120~200px 空间。
 
 ## 目录
 
