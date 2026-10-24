@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>牛牛 H5 接入示例</title>
+  <style>
+    /* 示例宿主页样式：竖屏页面内按 375:211 嵌入游戏 */
+    body { margin: 0; font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f4f5f8; color: #1f2430; }
+    .page { max-width: 480px; margin: 0 auto; padding: 12px; }
+    .game { width: 100%; aspect-ratio: 375 / 211; background: #000; border-radius: 8px; overflow: hidden; }
+    .game.game-expanded { aspect-ratio: auto; height: 70vh; }
+    form { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin: 12px 0; }
+    input, select { padding: 8px; border: 1px solid #d5dae1; border-radius: 6px; font: inherit; }
+    .actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+    button { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: #26bfba; color: #fff; font: inherit; }
+    button[type="button"] { background: #8a94a6; }
+    #Log { white-space: pre-wrap; font-size: 12px; color: #4c5566; }
+  </style>
+</head>
+<body>
+<main class="page">
+  <h3>宿主页面</h3>
+  <div id="GameContainer" class="game"></div>
+  <form id="LoginForm">
+    <label for="Account">测试账号</label><input id="Account" autocomplete="username">
+    <label for="Password">密码</label><input id="Password" type="password" autocomplete="current-password">
+    <div class="actions"><button type="submit">登录并填入凭据</button></div>
+  </form>
+  <form id="SessionForm">
+    <label for="GameUrl">游戏地址</label><input id="GameUrl" required>
+    <label for="LiveUserId">UID</label><input id="LiveUserId" inputmode="numeric" required>
+    <label for="ImUserId">IM UID</label><input id="ImUserId" inputmode="numeric" required>
+    <label for="LiveToken">Token</label><input id="LiveToken" type="password" required>
+    <label for="SceneType">场景类型</label>
+    <select id="SceneType"><option value="2">2 IM 群</option><option value="1">1 直播间</option></select>
+    <label for="SceneId">场景 ID</label><input id="SceneId" value="0999000015" required>
+    <span>按钮</span>
+    <div>
+      <label><input id="HideBack" type="checkbox"> 隐藏返回</label>
+      <label><input id="HideFullscreen" type="checkbox"> 隐藏大屏</label>
+      <label><input id="CustomFullscreen" type="checkbox"> 自定义大屏</label>
+    </div>
+    <label for="DialogScope">弹窗范围</label>
+    <select id="DialogScope"><option value="game">游戏区域内</option><option value="fullscreen">弹窗时全屏</option></select>
+    <span>弹窗遮罩</span>
+    <div>
+      <input id="MaskColor" placeholder="#000000" size="8">
+      <input id="MaskOpacity" type="number" min="0" max="1" step="0.1" placeholder="0~1" style="width:72px">
+      <label><input id="HideMask" type="checkbox"> 透明</label>
+    </div>
+    <div class="actions"><button type="submit">打开游戏</button><button id="CloseButton" type="button">关闭游戏</button></div>
+  </form>
+  <div id="Log"></div>
+</main>
+<script src="../cocos_game_web.js"></script>
+<script>
+  // 示例：宿主登录后拿到 UID、IM UID、Token，再调用 CocosGameWeb.open 打开游戏
+  const DEFAULT_GAME_URL = 'https://niuniu-web-test.pages.dev/';
+  // 部署在游戏站点 /sdk/demo/ 下时，默认打开同站点的游戏
+  const IS_ON_GAME_SITE = /\/sdk\/demo\/(index\.html)?$/.test(location.pathname);
+  const LOGIN_PRODUCT_ID = '4';
+  const LOGIN_CLIENT_VERSION = '1.120';
+  let game = null;
+
+  function appendLog(message) {
+    const log = document.getElementById('Log');
+    log.textContent = `${new Date().toLocaleTimeString()} ${message}\n${log.textContent}`;
+  }
+
+  function readValue(id) {
+    return document.getElementById(id).value.trim();
+  }
+
+  function isChecked(id) {
+    return document.getElementById(id).checked;
+  }
+
+  // 自定义大屏示例：宿主自己放大游戏容器，再同步游戏内图标状态
+  function toggleContainerFullscreen(isFullscreen) {
+    document.getElementById('GameContainer').classList.toggle('game-expanded', isFullscreen);
+    game.updateFullscreenState(isFullscreen);
+    appendLog(`宿主自定义大屏：${isFullscreen ? '放大' : '还原'}`);
+  }
+
+  // 只把填写了的遮罩项传给游戏，留空沿用游戏默认渐变
+  function readDialogMask() {
+    const mask = { visible: !isChecked('HideMask') };
+    if (readValue('MaskColor')) mask.color = readValue('MaskColor');
+    if (readValue('MaskOpacity')) mask.opacity = Number(readValue('MaskOpacity'));
+    return mask;
+  }
+
+  function openGame(event) {
+    event.preventDefault();
+    if (game) game.close();
+    game = CocosGameWeb.open({
+      dialogScope: readValue('DialogScope'),
+      dialogMask: readDialogMask(),
+      onDialogChange(isVisible) { appendLog(isVisible ? '游戏弹窗打开' : '游戏弹窗关闭'); },
+      showBackButton: !isChecked('HideBack'),
+      showFullscreenButton: !isChecked('HideFullscreen'),
+      onFullscreenRequest: isChecked('CustomFullscreen') ? toggleContainerFullscreen : undefined,
+      container: document.getElementById('GameContainer'),
+      gameUrl: readValue('GameUrl'),
+      session: {
+        liveUserId: Number(readValue('LiveUserId')),
+        imUserId: Number(readValue('ImUserId')),
+        liveToken: readValue('LiveToken'),
+        sceneType: Number(readValue('SceneType')),
+        sceneId: readValue('SceneId'),
+        clientVersion: '1.0.0',
+        deviceType: 'H5',
+      },
+      onReady() { appendLog('游戏已启动'); },
+      onError(error) { appendLog(`启动失败：${error.message}`); },
+      onBack() { appendLog('牌桌返回，关闭游戏'); game.close(); game = null; },
+      onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
+      onEvent(name, payload) { appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`); },
+      onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
+    });
+  }
+
+  // 仅测试用：通过游戏站点的同源登录代理换取凭据，正式宿主应复用自身登录体系
+  async function loginForDemo(event) {
+    event.preventDefault();
+    const account = readValue('Account');
+    const password = document.getElementById('Password').value;
+    if (!account || !password) {
+      appendLog('请输入测试账号和密码');
+      return;
+    }
+    try {
+      const url = new URL('/prod-api/login', readValue('GameUrl'));
+      Object.entries({ account, password, apptype: '1', pid: LOGIN_PRODUCT_ID, countryCode: '86' })
+        .forEach(([key, value]) => url.searchParams.set(key, value));
+      const response = await fetch(url, { headers: { pid: LOGIN_PRODUCT_ID, version: LOGIN_CLIENT_VERSION } });
+      const payload = await response.json();
+      if (String(payload.code) !== '0') throw new Error(payload.msg || '登录失败');
+      document.getElementById('LiveUserId').value = payload.uid;
+      document.getElementById('ImUserId').value = payload.userinfo?.imUserId ?? '';
+      document.getElementById('LiveToken').value = payload.token;
+      document.getElementById('Password').value = '';
+      appendLog('登录成功，已填入 UID / IM UID / Token');
+    } catch (error) {
+      console.error('Demo 登录失败', error);
+      const hint = IS_ON_GAME_SITE ? '' : '（账号登录仅在游戏站点的在线 Demo 可用，也可直接填写 UID 与 Token）';
+      appendLog(`登录失败：${error.message}${hint}`);
+    }
+  }
+
+  const defaultGameUrl = IS_ON_GAME_SITE ? new URL('../../', location.href).href : DEFAULT_GAME_URL;
+  document.getElementById('GameUrl').value = new URLSearchParams(location.search).get('gameUrl') || defaultGameUrl;
+  document.getElementById('LoginForm').addEventListener('submit', loginForDemo);
+  document.getElementById('SessionForm').addEventListener('submit', openGame);
+  document.getElementById('CloseButton').addEventListener('click', () => {
+    if (game) game.close();
+    game = null;
+    appendLog('已关闭游戏');
+  });
+</script>
+</body>
+</html>
