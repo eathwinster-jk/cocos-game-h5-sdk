@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.10/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.11/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -46,6 +46,7 @@
 - `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
 - `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
 - 下注卡片插入在游戏容器正下方，请为其预留约 120~200px 空间。
+- 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
 
 ## 目录
 

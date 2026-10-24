@@ -34,7 +34,7 @@
   const DIALOG_STYLE = `
 .cgw-layer{position:fixed;inset:0;z-index:2147483646;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;-webkit-tap-highlight-color:transparent}
 .cgw-layer *,.cgw-bet,.cgw-bet *{box-sizing:border-box}
-.cgw-layer button,.cgw-bet button{margin:0;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cgw-layer button[type],.cgw-bet button[type]{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;text-align:center;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .cgw-scrim{position:absolute;inset:0;background:linear-gradient(rgba(32,14,62,.59),rgba(6,30,38,.75));opacity:0;transition:opacity .28s ease-out}
 .cgw-layer.is-open .cgw-scrim{opacity:1}
 .cgw-layer.is-closing .cgw-scrim{opacity:0;transition-duration:.18s}
@@ -47,9 +47,9 @@
 .cgw-title{font-size:20px;font-weight:700;color:#222}
 .cgw-tag{padding:3px 9px;border-radius:12px;background:#26bfba;color:#fff;font-size:13px}
 .cgw-tabs{display:flex;border-bottom:1px solid #eee}
-.cgw-tab{flex:1;height:46px;position:relative;border:0;background:none;font-size:16px;color:#999}
-.cgw-tab.is-selected{color:#222;font-weight:700}
-.cgw-tab.is-selected::after{content:'';position:absolute;left:50%;bottom:4px;width:28px;height:3px;margin-left:-14px;border-radius:2px;background:#222}
+.cgw-layer button.cgw-tab{flex:1;height:46px;position:relative;border:0;background:none;font-size:16px;color:#999}
+.cgw-layer button.cgw-tab.is-selected{color:#222;font-weight:700}
+.cgw-layer button.cgw-tab.is-selected::after{content:'';position:absolute;left:50%;bottom:4px;width:28px;height:3px;margin-left:-14px;border-radius:2px;background:#222}
 .cgw-body{flex:1;min-height:0;position:relative}
 .cgw-pane{position:absolute;inset:0;display:flex;flex-direction:column}
 .cgw-pane[hidden]{display:none}
@@ -64,12 +64,12 @@
 .cgw-rule-value{flex:1;text-align:right;font-size:13px;color:#444}
 .cgw-rule-desc{margin-top:6px;font-size:13px;line-height:1.5;color:#666}
 .cgw-segment{display:flex;margin:10px 16px 0;padding:3px;border-radius:18px;background:#f2f3f5}
-.cgw-segment button{flex:1;height:32px;border:0;border-radius:16px;background:none;font-size:14px;color:#999}
-.cgw-segment button.is-selected{background:#fff;color:#222;font-weight:700}
+.cgw-layer .cgw-segment button{flex:1;height:32px;border:0;border-radius:16px;background:none;font-size:14px;color:#999}
+.cgw-layer .cgw-segment button.is-selected{background:#fff;color:#222;font-weight:700}
 .cgw-banner{margin-top:12px;padding:8px 10px;border-radius:8px;background:#e6f8f7;color:#26bfba;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cgw-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.cgw-chip{padding:6px 12px;border:0;border-radius:14px;background:#f5f6f8;color:#666;font-size:13px}
-.cgw-chip.is-selected{background:#e6f8f7;color:#26bfba;font-weight:700}
+.cgw-layer button.cgw-chip{padding:6px 12px;border:0;border-radius:14px;background:#f5f6f8;color:#666;font-size:13px}
+.cgw-layer button.cgw-chip.is-selected{background:#e6f8f7;color:#26bfba;font-weight:700}
 .cgw-stats{display:flex;gap:8px;margin-top:12px}
 .cgw-stat{flex:1;min-width:0;padding:10px 6px 10px 10px;border-radius:8px;background:#f7f8fa}
 .cgw-stat-value{font-size:18px;font-weight:700;color:#222}
@@ -84,7 +84,7 @@
 .cgw-controls+.cgw-controls{margin-top:10px}
 .cgw-select,.cgw-input{flex:1;min-width:0;height:36px;padding:0 10px;border:0;border-radius:8px;background:#f5f6f8;color:#222;font-size:13px;outline:none;-webkit-appearance:none;appearance:none}
 .cgw-select{padding-right:26px;background:#f5f6f8 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0h10L5 6z' fill='%23999'/%3E%3C/svg%3E") no-repeat right 10px center}
-.cgw-search{padding:0 18px;border:0;border-radius:8px;background:#26bfba;color:#fff;font-size:14px;font-weight:700}
+.cgw-layer button.cgw-search{padding:0 18px;border:0;border-radius:8px;background:#26bfba;color:#fff;font-size:14px;font-weight:700}
 .cgw-session{margin-top:10px;padding:12px;border:1px solid transparent;border-radius:10px;background:#f7f8fa}
 .cgw-session.is-expanded{padding-bottom:4px;border-color:#26bfba;background:#f0fbfa}
 .cgw-session-head{display:flex;align-items:center;gap:6px}
@@ -93,15 +93,15 @@
 .cgw-session-arrow{font-size:14px;color:#999}
 .cgw-session-detail{margin-top:6px;font-size:12px;color:#999}
 .cgw-session-rounds{margin-top:10px;border-top:1px solid #eee}
-.cgw-footer{display:block;width:100%;padding:16px 0;border:0;background:none;font-size:13px;color:#999}
-.cgw-footer.is-retry{color:#26bfba}
+.cgw-layer button.cgw-footer{display:block;width:100%;padding:16px 0;border:0;background:none;font-size:13px;color:#999}
+.cgw-layer button.cgw-footer.is-retry{color:#26bfba}
 .cgw-empty{padding:40px 0;text-align:center;font-size:14px;color:#999}
 .cgw-bet{margin:8px 14px 0;padding:12px 16px 16px;border-radius:20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
 .cgw-bet-title{padding:6px 0;font-size:15px;color:#555}
 .cgw-bet-title.is-chip{font-size:14px;color:#888}
 .cgw-bet-row{display:grid;grid-template-columns:repeat(var(--cgw-columns),minmax(0,1fr));gap:12px;padding:2px 6px}
-.cgw-choice{height:46px;border:0;border-radius:10px;background:#f5f6f8;color:#333;font-size:16px}
-.cgw-choice.is-selected{background:#c79953;color:#fff}
+.cgw-bet button.cgw-choice{height:46px;padding:0 4px;border:0;border-radius:10px;background:#f5f6f8;color:#333;font-size:16px;white-space:nowrap;overflow:hidden}
+.cgw-bet button.cgw-choice.is-selected{background:#c79953;color:#fff}
 .cgw-confirm-layer{display:flex;align-items:center;justify-content:center}
 .cgw-confirm{position:relative;width:300px;max-width:calc(100% - 48px);border-radius:24px;background:#fff;overflow:hidden;opacity:0;transform:scale(.85);transition:transform .28s cubic-bezier(.34,1.56,.64,1),opacity .28s}
 .cgw-layer.is-open .cgw-confirm{opacity:1;transform:none}
@@ -109,8 +109,8 @@
 .cgw-confirm-title{padding:22px 24px 8px;text-align:center;font-size:18px;font-weight:700;color:#212121}
 .cgw-confirm-message{padding:4px 24px 20px;text-align:center;font-size:15px;line-height:1.5;color:#5a5a5a}
 .cgw-confirm-actions{display:flex;border-top:1px solid #e8e8e8}
-.cgw-confirm-actions button{flex:1;height:48px;border:0;background:none;font-size:16px;color:#666}
-.cgw-confirm-actions button+button{border-left:1px solid #e8e8e8}
+.cgw-layer .cgw-confirm-actions button{flex:1;height:48px;border:0;background:none;font-size:16px;color:#666}
+.cgw-layer .cgw-confirm-actions button+button{border-left:1px solid #e8e8e8}
 `;
 
   /**
