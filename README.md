@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.12/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.0/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -47,6 +47,53 @@
 - `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
 - 下注卡片插入在游戏容器正下方，请为其预留约 120~200px 空间。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
+
+## 宿主自绘下注 / 记录 / 退出（0.2.0）
+
+手机竖屏内嵌时，宿主可以用自己的界面接管下注、记录与规则、退出确认（与 Android / iOS SDK 0.2.0 一致）：传入对应回调即接管，未传时仍由 SDK 展示自带界面；全屏时始终使用游戏内弹窗。
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  onBetOptions(options) {          // 新一局可下注：{ roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }
+    showMyBetPanel(options);
+  },
+  onBetClosed(roundId) {           // 截止、进入全屏或关闭时收起该局面板
+    hideMyBetPanel(roundId);
+  },
+  onBetResult(result) {            // { roundId, clientBetNo, areaCode, amountCent, isSuccess, errorMessage, balanceCent }
+    showMyBetResult(result);
+  },
+  onShowRecords(content) {         // 玩家点击记录：content 含 title、sections 与 records
+    showMyRecords(content);
+  },
+  onRecordsUpdated(records) {      // 记录数据刷新（切换页签、加载更多后）
+    updateMyRecords(records);
+  },
+  onExitRequest(decide) {          // 退出确认：decide(true) 离开，decide(false) 取消
+    decide(window.confirm('确定离开？'));
+  },
+  onEvent(event, payload) {        // 钱包余额：wallet.balance_changed { balanceCent }
+    if (event === 'wallet.balance_changed') updateMyBalance(payload.balanceCent);
+  },
+});
+
+// 玩家选好注区与筹码后提交，返回 false 表示本局已截止、参数无效或重复提交
+game.submitBet({
+  roundId: options.roundId,
+  areaCode: options.areas[0].areaCode,
+  amountCent: 100,
+  clientBetNo: CocosGameWeb.createClientBetNo(),
+});
+
+// 记录查询 { isHistory, filterKey, periodIndex, keyword } 与加载更多，结果通过 onRecordsUpdated 返回
+game.queryRecords({ isHistory: true });
+game.loadMoreRecords(true);
+```
+
+- 同一局只回调一次 `onBetOptions`；从全屏回到竖屏时会以剩余倒计时重新回调。
+- `clientBetNo` 最长 64 位，用于幂等：失败可用同一单号重试，成功后重复提交会被拒绝。
+- 金额单位均为分。
 
 ## 迷你条（0.1.12）
 

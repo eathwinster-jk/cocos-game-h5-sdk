@@ -17,6 +17,7 @@
   const LAYER_EXIT_MS = 200;
   const MAX_CHOICE_COLUMNS = 4;
   const CENTS_PER_YUAN = 100;
+  const MAX_CLIENT_BET_NO_LENGTH = 64;
   const DEFAULT_MASK_OPACITY = 0.6;
   const HOST_DIALOG_TEXTS = Object.freeze({
     rulesTitle: '记录与规则',
@@ -754,20 +755,161 @@
   }
 
   /**
+   * 解析游戏下发的下注选项，注区、筹码或局号无效时返回 null；deadline 为毫秒时间戳。
+   */
+  function parseBetOptions(data) {
+    const roundId = readString(data, 'roundId');
+    const areas = readArray(data, 'areas')
+      .filter((area) => readString(area, 'areaCode').length > 0)
+      .map((area) => Object.freeze({ areaCode: readString(area, 'areaCode'), areaName: readString(area, 'areaName', readString(area, 'areaCode')) }));
+    const chipsCent = readArray(data, 'chipsCent').filter((cent) => Number.isSafeInteger(cent) && cent > 0);
+    if (!roundId || areas.length === 0 || chipsCent.length === 0) return null;
+    const seconds = Number(data.countdownSeconds);
+    const countdownSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+    return Object.freeze({
+      roundId,
+      countdownSeconds,
+      deadline: Date.now() + countdownSeconds * 1000,
+      areas: Object.freeze(areas),
+      chipsCent: Object.freeze(chipsCent),
+    });
+  }
+
+  /**
+   * 下注协调：记录本局选项，校验提交并按 clientBetNo 防重复（结果返回前或成功后再次提交会被忽略）。
+   */
+  function createBetCoordinator() {
+    let currentOptions = null;
+    const pendingBetNos = new Set();
+    const succeededBetNos = new Set();
+
+    function openRound(options) {
+      if (currentOptions && currentOptions.roundId === options.roundId) return false;
+      succeededBetNos.clear();
+      currentOptions = options;
+      return true;
+    }
+
+    function closeRound() {
+      const roundId = currentOptions ? currentOptions.roundId : '';
+      currentOptions = null;
+      return roundId;
+    }
+
+    function accept(request) {
+      const { roundId, areaCode, amountCent, clientBetNo } = request || {};
+      if (typeof clientBetNo !== 'string' || !clientBetNo.trim() || clientBetNo.length > MAX_CLIENT_BET_NO_LENGTH) {
+        console.error(`CocosGameWeb clientBetNo 不能为空且不超过 ${MAX_CLIENT_BET_NO_LENGTH} 个字符`, request);
+        return false;
+      }
+      const options = currentOptions;
+      if (!options || options.roundId !== String(roundId) || Date.now() >= options.deadline) {
+        console.warn('CocosGameWeb 本局不在下注时间内', request);
+        return false;
+      }
+      if (!options.areas.some((area) => area.areaCode === areaCode) || !options.chipsCent.includes(amountCent)) {
+        console.error('CocosGameWeb 无效注区或金额', request);
+        return false;
+      }
+      if (pendingBetNos.has(clientBetNo) || succeededBetNos.has(clientBetNo)) {
+        console.warn('CocosGameWeb 忽略重复下注提交', clientBetNo);
+        return false;
+      }
+      pendingBetNos.add(clientBetNo);
+      return true;
+    }
+
+    function handleResult(data) {
+      const result = Object.freeze({
+        roundId: readString(data, 'roundId'),
+        areaCode: readString(data, 'areaCode'),
+        amountCent: Number(data.amountCent) || 0,
+        clientBetNo: readString(data, 'clientBetNo'),
+        isSuccess: data.isSuccess === true,
+        balanceCent: Number.isSafeInteger(data.balanceCent) ? data.balanceCent : null,
+        errorMessage: readString(data, 'errorMessage'),
+      });
+      pendingBetNos.delete(result.clientBetNo);
+      if (result.isSuccess) succeededBetNos.add(result.clientBetNo);
+      return result;
+    }
+
+    function reset() {
+      currentOptions = null;
+      pendingBetNos.clear();
+      succeededBetNos.clear();
+    }
+
+    return Object.freeze({ openRound, closeRound, accept, handleResult, reset });
+  }
+
+  /**
    * 宿主弹窗控制器：处理游戏的弹窗请求，操作结果经 sendResult 回传游戏。
-   * onExitRequest(decide) 传入时由宿主自行确认退出，调用 decide(true/false) 回传。
+   * 宿主传入 onBetOptions 即接管竖屏下注、传入 onShowRecords 即接管竖屏记录与规则、传入 onExitRequest 即接管退出确认；
+   * 未传时由 SDK 在宿主页面展示自带界面。
    */
   function createHostDialogs(context) {
     let betCard = null;
     let rulesSheet = null;
     let exitConfirm = null;
     let exitToken = 0;
+    const betCoordinator = createBetCoordinator();
+    const isHostHandlingBet = typeof context.onBetOptions === 'function';
+    const isHostHandlingRecords = typeof context.onShowRecords === 'function';
 
     function sendRecordsQuery(action, query) {
       context.sendResult({ type: 'recordsQuery', action, ...query, keyword: query.keyword || '' });
     }
 
+    function sendBetSelection(areaCode, amountCent, clientBetNo) {
+      context.sendResult({ type: 'betSelection', areaCode, amountCent, clientBetNo });
+    }
+
+    function showBetOptions(data) {
+      const options = parseBetOptions(data);
+      if (!options) {
+        console.error('CocosGameWeb 下注选项无效', data);
+        betCard?.dismiss();
+        return;
+      }
+      const isNewRound = betCoordinator.openRound(options);
+      if (isHostHandlingBet) {
+        if (isNewRound) invokeCallback('onBetOptions', context.onBetOptions, options);
+        return;
+      }
+      betCard = betCard || createBetCard(context.container, (areaCode, amountCent) => sendBetSelection(areaCode, amountCent, createClientBetNo()));
+      betCard.show(data);
+    }
+
+    function closeBetRound() {
+      betCard?.dismiss();
+      const roundId = betCoordinator.closeRound();
+      if (roundId) invokeCallback('onBetClosed', context.onBetClosed, roundId);
+    }
+
+    function submitBet(request) {
+      if (!betCoordinator.accept(request)) return false;
+      sendBetSelection(request.areaCode, request.amountCent, request.clientBetNo);
+      return true;
+    }
+
+    function queryRecords(query) {
+      const filterKey = query && typeof query.filterKey === 'string' && query.filterKey ? query.filterKey : RECORD_FILTER_ALL;
+      const periodIndex = Math.max(0, Math.floor(Number(query && query.periodIndex) || 0));
+      sendRecordsQuery('query', { isHistory: Boolean(query && query.isHistory), filterKey, periodIndex, keyword: query && query.keyword ? String(query.keyword) : '' });
+      return true;
+    }
+
+    function loadMoreRecords(isHistory) {
+      sendRecordsQuery('loadMore', { isHistory: Boolean(isHistory), filterKey: RECORD_FILTER_ALL, periodIndex: 0, keyword: '' });
+      return true;
+    }
+
     function showRules(content) {
+      if (isHostHandlingRecords) {
+        invokeCallback('onShowRecords', context.onShowRecords, content);
+        return;
+      }
       rulesSheet?.close(false);
       rulesSheet = openRulesSheet(content, context.dialogMask, {
         onQuery: (query) => sendRecordsQuery('query', query),
@@ -795,15 +937,15 @@
     function handle(method, payload) {
       const data = payload && typeof payload === 'object' ? payload : {};
       if (method === 'notifyBetOptions') {
-        betCard = betCard || createBetCard(context.container, (areaCode, amountCent) => {
-          context.sendResult({ type: 'betSelection', areaCode, amountCent, clientBetNo: createClientBetNo() });
-        });
-        betCard.show(data);
+        showBetOptions(data);
       } else if (method === 'dismissBetOptions') {
-        betCard?.dismiss();
+        closeBetRound();
+      } else if (method === 'notifyBetResult') {
+        invokeCallback('onBetResult', context.onBetResult, betCoordinator.handleResult(data));
       } else if (method === 'showRules') {
         showRules(data);
       } else if (method === 'updateRecords') {
+        invokeCallback('onRecordsUpdated', context.onRecordsUpdated, data);
         if (rulesSheet?.isOpen()) rulesSheet.updateRecords(data);
       } else if (method === 'requestExitGame') {
         requestExit();
@@ -813,20 +955,28 @@
     }
 
     /**
-     * 进入全屏或关闭游戏时收起全部宿主弹窗，未决定的退出确认按取消回传。
+     * 进入全屏或关闭游戏时收起全部宿主弹窗并通知宿主本局下注截止，未决定的退出确认按取消回传。
      */
     function dismissAll() {
-      betCard?.dismiss();
+      closeBetRound();
       rulesSheet?.close(false);
       rulesSheet = null;
       exitConfirm?.cancel();
     }
 
-    return Object.freeze({ handle, dismissAll });
+    /**
+     * 关闭游戏时清空下注状态。
+     */
+    function reset() {
+      dismissAll();
+      betCoordinator.reset();
+    }
+
+    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords });
   }
 
   /**
-   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, close }。
+   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
@@ -841,6 +991,11 @@
    *   onDialogChange(isVisible)       游戏内弹窗打开/全部关闭时回调
    *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏仍用游戏内弹窗
    *   onExitRequest(decide)          改写宿主退出确认：传入后由宿主自行弹窗，调用 decide(true) 离开、decide(false) 取消
+   *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
+   *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)
+   *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
+   *                                  记录更新回调 onRecordsUpdated(records)，查询调用 queryRecords / loadMoreRecords
+   *                                  （以上宿主回调仅在 hostDialogs 未关闭时生效，全屏时由游戏内弹窗展示）
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    */
@@ -869,6 +1024,11 @@
       container: options.container,
       dialogMask: options.dialogMask || null,
       onExitRequest: options.onExitRequest,
+      onBetOptions: options.onBetOptions,
+      onBetClosed: options.onBetClosed,
+      onBetResult: options.onBetResult,
+      onShowRecords: options.onShowRecords,
+      onRecordsUpdated: options.onRecordsUpdated,
       sendResult: (message) => postToGame('dialogResult', { message }),
     });
 
@@ -944,7 +1104,7 @@
 
     function close() {
       if (isClosed) return;
-      hostDialogs?.dismissAll();
+      hostDialogs?.reset();
       setFullscreen(false);
       isClosed = true;
       global.removeEventListener('message', handleMessage);
@@ -1016,9 +1176,28 @@
        * backgroundColor 为容器所在页面底色（'#RRGGBB'），用于迷你条圆角外区域，不传为白色。迷你模式下不可全屏。
        */
       setMiniMode,
+      /**
+       * 宿主自绘下注时提交：{ roundId, areaCode, amountCent, clientBetNo }；返回 true 表示已发出，结果经 onBetResult 回调；
+       * 本局已截止、游戏已关闭、幂等号重复或注区金额不在本局选项内时返回 false。
+       */
+      submitBet(request) {
+        return !isClosed && hostDialogs !== null && hostDialogs.submitBet(request);
+      },
+      /**
+       * 宿主自绘记录时按条件查询：{ isHistory, filterKey, periodIndex, keyword }，结果经 onRecordsUpdated 回调。
+       */
+      queryRecords(query) {
+        return !isClosed && hostDialogs !== null && hostDialogs.queryRecords(query);
+      },
+      /**
+       * 宿主自绘记录时加载下一页，结果经 onRecordsUpdated 回调。
+       */
+      loadMoreRecords(isHistory) {
+        return !isClosed && hostDialogs !== null && hostDialogs.loadMoreRecords(isHistory);
+      },
       close,
     });
   }
 
-  global.CocosGameWeb = Object.freeze({ open });
+  global.CocosGameWeb = Object.freeze({ open, createClientBetNo });
 }(window));

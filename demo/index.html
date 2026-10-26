@@ -18,12 +18,22 @@
     button { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: #26bfba; color: #fff; font: inherit; }
     button[type="button"] { background: #8a94a6; }
     #Log { white-space: pre-wrap; font-size: 12px; color: #4c5566; }
+    /* 宿主自绘示例：下注面板与记录面板由宿主页面自己实现 */
+    .host-panel { margin-top: 8px; padding: 10px 12px; border: 1px solid #26bfba; border-radius: 10px; background: #fff; }
+    .host-panel[hidden] { display: none; }
+    .host-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .host-row button { flex: 1; min-width: 56px; padding: 8px 4px; background: #eef1f4; color: #1f2430; }
+    .host-row button.is-selected { background: #26bfba; color: #fff; }
+    .host-records { max-height: 40vh; overflow-y: auto; font-size: 13px; }
   </style>
 </head>
 <body>
 <main class="page">
   <h3>宿主页面</h3>
   <div id="GameContainer" class="game"></div>
+  <div id="Balance">钱包余额：-</div>
+  <div id="HostBetPanel" class="host-panel" hidden></div>
+  <div id="HostRecordsPanel" class="host-panel" hidden></div>
   <form id="LoginForm">
     <label for="Account">测试账号</label><input id="Account" autocomplete="username">
     <label for="Password">密码</label><input id="Password" type="password" autocomplete="current-password">
@@ -46,7 +56,10 @@
     <label for="DialogScope">弹窗范围</label>
     <select id="DialogScope"><option value="game">游戏区域内</option><option value="fullscreen">弹窗时全屏</option></select>
     <span>宿主弹窗</span>
-    <div><label><input id="DisableHostDialogs" type="checkbox"> 手机竖屏也用游戏内弹窗</label></div>
+    <div>
+      <label><input id="DisableHostDialogs" type="checkbox"> 手机竖屏也用游戏内弹窗</label>
+      <label><input id="CustomHostUi" type="checkbox"> 宿主自绘下注 / 记录 / 退出</label>
+    </div>
     <span>弹窗遮罩</span>
     <div>
       <input id="MaskColor" placeholder="#000000" size="8">
@@ -104,11 +117,178 @@
     return mask;
   }
 
+  // 宿主自绘下注示例：收到本局选项后展示注区与筹码，点筹码调用 submitBet
+  const hostBet = { options: null, areaIndex: 0, timerId: 0 };
+  function formatCent(amountCent) {
+    return amountCent % 100 === 0 ? `¥${amountCent / 100}` : `¥${(amountCent / 100).toFixed(2)}`;
+  }
+
+  function createButton(text, isSelected, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.className = isSelected ? 'is-selected' : '';
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function renderHostBet(status) {
+    const panel = document.getElementById('HostBetPanel');
+    const options = hostBet.options;
+    panel.hidden = false;
+    panel.textContent = '';
+    const title = document.createElement('div');
+    const remainSeconds = options ? Math.max(0, Math.ceil((options.deadline - Date.now()) / 1000)) : 0;
+    title.textContent = options ? `第 ${options.roundId} 局 · 剩余 ${remainSeconds} 秒` : '本局下注已截止';
+    panel.appendChild(title);
+    if (options) {
+      const areaRow = document.createElement('div');
+      areaRow.className = 'host-row';
+      options.areas.forEach((area, index) => areaRow.appendChild(createButton(area.areaName, index === hostBet.areaIndex, () => {
+        hostBet.areaIndex = index;
+        renderHostBet('');
+      })));
+      const chipRow = document.createElement('div');
+      chipRow.className = 'host-row';
+      options.chipsCent.forEach((amountCent) => chipRow.appendChild(createButton(formatCent(amountCent), false, () => submitHostBet(amountCent))));
+      panel.append(areaRow, chipRow);
+    }
+    const statusLine = document.createElement('div');
+    statusLine.id = 'HostBetStatus';
+    statusLine.textContent = status || '';
+    panel.appendChild(statusLine);
+  }
+
+  function submitHostBet(amountCent) {
+    const options = hostBet.options;
+    if (!game || !options) return;
+    const isSent = game.submitBet({
+      roundId: options.roundId,
+      areaCode: options.areas[hostBet.areaIndex].areaCode,
+      amountCent,
+      clientBetNo: CocosGameWeb.createClientBetNo(),
+    });
+    document.getElementById('HostBetStatus').textContent = isSent ? '提交中…' : '本局已截止或重复提交';
+  }
+
+  function showHostBetOptions(options) {
+    hostBet.options = options;
+    hostBet.areaIndex = 0;
+    clearInterval(hostBet.timerId);
+    hostBet.timerId = setInterval(() => renderHostBet(document.getElementById('HostBetStatus')?.textContent), 1000);
+    renderHostBet('');
+  }
+
+  function closeHostBetRound(roundId) {
+    if (hostBet.options?.roundId !== roundId) return;
+    hostBet.options = null;
+    clearInterval(hostBet.timerId);
+    renderHostBet('');
+  }
+
+  function showHostBetResult(result) {
+    const balance = result.balanceCent === null ? '-' : formatCent(result.balanceCent);
+    const text = result.isSuccess ? `下注成功 ${formatCent(result.amountCent)}，余额 ${balance}` : `下注失败：${result.errorMessage}`;
+    const status = document.getElementById('HostBetStatus');
+    if (status) status.textContent = text;
+    appendLog(text);
+  }
+
+  // 宿主自绘记录示例：展示规则与本桌 / 历史记录，切换和加载更多调用 queryRecords / loadMoreRecords
+  const hostRecords = { content: null, records: null, tab: 'current' };
+  function renderHostRecords() {
+    const panel = document.getElementById('HostRecordsPanel');
+    const records = hostRecords.records || {};
+    panel.hidden = false;
+    panel.textContent = '';
+    const tabs = document.createElement('div');
+    tabs.className = 'host-row';
+    [['current', records.currentTab || '本桌'], ['history', records.historyTab || '历史'], ['rules', hostRecords.content?.title || '规则'], ['close', '关闭']]
+      .forEach(([tab, label]) => tabs.appendChild(createButton(label, tab === hostRecords.tab, () => selectHostRecordsTab(tab))));
+    const body = document.createElement('div');
+    body.className = 'host-records';
+    readHostRecordLines().forEach((line) => {
+      const row = document.createElement('div');
+      row.textContent = line;
+      body.appendChild(row);
+    });
+    panel.append(tabs, body);
+    const list = (records[hostRecords.tab] || {}).list || {};
+    if (hostRecords.tab !== 'rules' && list.hasMore) {
+      panel.appendChild(createButton(records.footer?.loadMore || '加载更多', false, () => game?.loadMoreRecords(hostRecords.tab === 'history')));
+    }
+  }
+
+  function readHostRecordLines() {
+    if (hostRecords.tab === 'rules') {
+      return (hostRecords.content?.sections || []).flatMap((section) => [`【${section.title}】`, ...(section.items || []).map((item) => `${item.title} ${item.value || ''}`)]);
+    }
+    const records = hostRecords.records || {};
+    const section = records[hostRecords.tab] || {};
+    const rows = (hostRecords.tab === 'history' ? section.sessions : section.items) || [];
+    if (section.list?.status === 'loading') return [records.footer?.loading || '加载中…'];
+    if (rows.length === 0) return [records.emptyText || '暂无记录'];
+    return rows.map((row) => `${row.title}  ${hostRecords.tab === 'history' ? row.amount : row.result}  ${row.detail || ''}`);
+  }
+
+  function selectHostRecordsTab(tab) {
+    if (tab === 'close') {
+      document.getElementById('HostRecordsPanel').hidden = true;
+      return;
+    }
+    hostRecords.tab = tab;
+    if (tab !== 'rules') game?.queryRecords({ isHistory: tab === 'history', filterKey: 'all', periodIndex: 0, keyword: '' });
+    renderHostRecords();
+  }
+
+  function showHostRecords(content) {
+    hostRecords.content = content;
+    hostRecords.records = content.records || null;
+    hostRecords.tab = 'current';
+    renderHostRecords();
+  }
+
+  function updateHostRecords(records) {
+    hostRecords.records = records;
+    if (!document.getElementById('HostRecordsPanel').hidden) renderHostRecords();
+  }
+
+  // 宿主自绘退出确认示例
+  function confirmHostExit(decide) {
+    decide(window.confirm('当前游戏正在进行中，离开后游戏将结束并结算。确定离开？'));
+  }
+
+  function createHostUiOptions() {
+    if (!isChecked('CustomHostUi')) return {};
+    return {
+      onBetOptions: showHostBetOptions,
+      onBetClosed: closeHostBetRound,
+      onBetResult: showHostBetResult,
+      onShowRecords: showHostRecords,
+      onRecordsUpdated: updateHostRecords,
+      onExitRequest: confirmHostExit,
+    };
+  }
+
+  function updateBalance(name, payload) {
+    if (name !== 'wallet.balance_changed' || !Number.isSafeInteger(payload.balanceCent)) return;
+    document.getElementById('Balance').textContent = `钱包余额：${formatCent(payload.balanceCent)}`;
+  }
+
+  function resetHostUi() {
+    clearInterval(hostBet.timerId);
+    hostBet.options = null;
+    document.getElementById('HostBetPanel').hidden = true;
+    document.getElementById('HostRecordsPanel').hidden = true;
+  }
+
   function openGame(event) {
     event.preventDefault();
     if (game) game.close();
+    resetHostUi();
     document.getElementById('GameContainer').classList.remove('game-mini');
     game = CocosGameWeb.open({
+      ...createHostUiOptions(),
       dialogScope: readValue('DialogScope'),
       dialogMask: readDialogMask(),
       onDialogChange(isVisible) { appendLog(isVisible ? '游戏弹窗打开' : '游戏弹窗关闭'); },
@@ -131,7 +311,10 @@
       onError(error) { appendLog(`启动失败：${error.message}`); },
       onBack() { appendLog('牌桌返回，关闭游戏'); game.close(); game = null; },
       onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
-      onEvent(name, payload) { appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`); },
+      onEvent(name, payload) {
+        appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`);
+        updateBalance(name, payload);
+      },
       onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
       onExpandRequest() { setGameMiniMode(false); },
     });
@@ -175,6 +358,7 @@
   document.getElementById('CloseButton').addEventListener('click', () => {
     if (game) game.close();
     game = null;
+    resetHostUi();
     document.getElementById('GameContainer').classList.remove('game-mini');
     appendLog('已关闭游戏');
   });
