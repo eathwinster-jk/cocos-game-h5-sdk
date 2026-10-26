@@ -10,6 +10,8 @@
     .page { max-width: 480px; margin: 0 auto; padding: 12px; }
     .game { width: 100%; aspect-ratio: 375 / 211; background: #000; border-radius: 8px; overflow: hidden; }
     .game.game-expanded { aspect-ratio: auto; height: 70vh; }
+    /* 迷你条：容器缩成 362:50 横条，圆角由游戏绘制，圆角外填页面底色 */
+    .game.game-mini { aspect-ratio: 362 / 50; border-radius: 0; background: transparent; }
     form { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin: 12px 0; }
     input, select { padding: 8px; border: 1px solid #d5dae1; border-radius: 6px; font: inherit; }
     .actions { grid-column: 1 / -1; display: flex; gap: 8px; }
@@ -51,7 +53,7 @@
       <input id="MaskOpacity" type="number" min="0" max="1" step="0.1" placeholder="0~1" style="width:72px">
       <label><input id="HideMask" type="checkbox"> 透明</label>
     </div>
-    <div class="actions"><button type="submit">打开游戏</button><button id="CloseButton" type="button">关闭游戏</button></div>
+    <div class="actions"><button type="submit">打开游戏</button><button id="MiniButton" type="button">迷你条</button><button id="CloseButton" type="button">关闭游戏</button></div>
   </form>
   <div id="Log"></div>
 </main>
@@ -85,6 +87,15 @@
     appendLog(`宿主自定义大屏：${isFullscreen ? '放大' : '还原'}`);
   }
 
+  // 迷你条示例：宿主先调整容器尺寸，再通知游戏切换，并传入页面底色
+  const PAGE_BACKGROUND_COLOR = '#F4F5F8';
+  function setGameMiniMode(isMiniMode) {
+    if (!game) return;
+    document.getElementById('GameContainer').classList.toggle('game-mini', isMiniMode);
+    game.setMiniMode(isMiniMode, PAGE_BACKGROUND_COLOR);
+    appendLog(isMiniMode ? '缩小为迷你条' : '展开牌桌');
+  }
+
   // 只把填写了的遮罩项传给游戏，留空沿用游戏默认渐变
   function readDialogMask() {
     const mask = { visible: !isChecked('HideMask') };
@@ -96,6 +107,7 @@
   function openGame(event) {
     event.preventDefault();
     if (game) game.close();
+    document.getElementById('GameContainer').classList.remove('game-mini');
     game = CocosGameWeb.open({
       dialogScope: readValue('DialogScope'),
       dialogMask: readDialogMask(),
@@ -121,6 +133,7 @@
       onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
       onEvent(name, payload) { appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`); },
       onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
+      onExpandRequest() { setGameMiniMode(false); },
     });
   }
 
@@ -156,9 +169,13 @@
   document.getElementById('GameUrl').value = new URLSearchParams(location.search).get('gameUrl') || defaultGameUrl;
   document.getElementById('LoginForm').addEventListener('submit', loginForDemo);
   document.getElementById('SessionForm').addEventListener('submit', openGame);
+  document.getElementById('MiniButton').addEventListener('click', () => {
+    setGameMiniMode(!document.getElementById('GameContainer').classList.contains('game-mini'));
+  });
   document.getElementById('CloseButton').addEventListener('click', () => {
     if (game) game.close();
     game = null;
+    document.getElementById('GameContainer').classList.remove('game-mini');
     appendLog('已关闭游戏');
   });
 </script>

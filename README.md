@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.11/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.1.12/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -47,6 +47,28 @@
 - `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
 - 下注卡片插入在游戏容器正下方，请为其预留约 120~200px 空间。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
+
+## 迷你条（0.1.12）
+
+宿主可把牌桌缩小为 362:50 的横条，迷你条显示局数、阶段、头像、手牌与结算输赢、余额、展开和退出按钮；入座时显示自己，旁观时显示庄家。
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  onExpandRequest() {                       // 玩家点击迷你条展开按钮
+    container.classList.remove('game-mini');
+    game.setMiniMode(false);
+  },
+});
+
+// 缩小：先把容器改成 362:50，再通知游戏，并传入容器所在页面底色
+container.classList.add('game-mini');      // .game-mini { aspect-ratio: 362 / 50; }
+game.setMiniMode(true, '#F4F5F8');
+```
+
+- 先调整容器尺寸再调用 `setMiniMode`；圆角由游戏绘制，圆角外填充 `backgroundColor`（`#RRGGBB`，缺省白色）。
+- 迷你模式下不可进入全屏，处于全屏时进入迷你条会先退出全屏。
+- 退出按钮与牌桌返回按钮行为一致；未传 `onExpandRequest` 时点击展开由 SDK 直接调用 `setMiniMode(false)`，容器尺寸需宿主自行恢复。
 
 ## 目录
 

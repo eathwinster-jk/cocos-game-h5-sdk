@@ -6,6 +6,7 @@
   const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
   const FULLSCREEN_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:#000;';
   const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:#000;';
+  const MINI_DEFAULT_BACKGROUND = '#FFFFFF';
   // 宿主弹窗：手机竖屏内嵌时游戏把下注、记录与规则、退出确认交给宿主页面展示，样式与交互对齐原生 SDK。
   const DIALOG_STYLE_ID = 'cocos-game-web-dialog-style';
   const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -825,7 +826,7 @@
   }
 
   /**
-   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, close }。
+   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
@@ -840,6 +841,7 @@
    *   onDialogChange(isVisible)       游戏内弹窗打开/全部关闭时回调
    *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏仍用游戏内弹窗
    *   onExitRequest(decide)          改写宿主退出确认：传入后由宿主自行弹窗，调用 decide(true) 离开、decide(false) 取消
+   *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    */
   function open(options) {
@@ -854,6 +856,8 @@
     let isClosed = false;
     let isFullscreen = false;
     let isDialogExpanded = false;
+    let isMiniMode = false;
+    let miniBackgroundColor;
     let bodyOverflow = '';
 
     function postToGame(type, data) {
@@ -895,7 +899,30 @@
       notifyFullscreenState();
     }
 
+    function setMiniMode(value, backgroundColor) {
+      if (backgroundColor !== undefined && !HEX_COLOR_PATTERN.test(backgroundColor)) {
+        throw new Error(`迷你条底色无效：${backgroundColor}`);
+      }
+      if (isClosed) return;
+      isMiniMode = Boolean(value);
+      miniBackgroundColor = backgroundColor;
+      if (isMiniMode) setFullscreen(false);
+      // 容器高度常为小数，画布取整后露出的边缘用宿主底色填充，避免透出黑线
+      iframe.style.background = isMiniMode ? miniBackgroundColor || MINI_DEFAULT_BACKGROUND : '#000';
+      postMiniMode();
+    }
+
+    function postMiniMode() {
+      postToGame('miniModeChanged', { isMiniMode, backgroundColor: miniBackgroundColor });
+    }
+
+    function handleExpandRequest() {
+      if (typeof options.onExpandRequest === 'function') invokeCallback('onExpandRequest', options.onExpandRequest);
+      else setMiniMode(false);
+    }
+
     function requestFullscreen(value) {
+      if (isMiniMode) return;
       if (typeof options.onFullscreenRequest === 'function') {
         invokeCallback('onFullscreenRequest', options.onFullscreenRequest, Boolean(value));
       } else {
@@ -938,6 +965,7 @@
             hostDialogs: hostDialogs !== null,
           },
         });
+        if (isMiniMode) postMiniMode();
       } else if (data.type === 'started') {
         invokeCallback('onReady', options.onReady);
       } else if (data.type === 'error') {
@@ -953,6 +981,8 @@
       } else if (data.type === 'fullscreenRequest') {
         isDialogExpanded = false;
         requestFullscreen(data.isFullscreen);
+      } else if (data.type === 'expandRequest') {
+        handleExpandRequest();
       } else if (data.type === 'dialogChange') {
         handleDialogChange(Boolean(data.isVisible));
       } else if (data.type === 'hostDialog') {
@@ -981,6 +1011,11 @@
        * 宿主自行处理全屏布局时，仅同步游戏内全屏图标状态。
        */
       updateFullscreenState,
+      /**
+       * 切换迷你条：宿主先把容器调整为 362:50 横条（或恢复原高度）再调用；
+       * backgroundColor 为容器所在页面底色（'#RRGGBB'），用于迷你条圆角外区域，不传为白色。迷你模式下不可全屏。
+       */
+      setMiniMode,
       close,
     });
   }
