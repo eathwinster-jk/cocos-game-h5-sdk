@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.0/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.1/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -38,6 +38,30 @@
 ```
 
 宿主页面域名需加入游戏白名单后才能嵌入，请联系我们登记域名。
+
+## 游客观战（0.2.1）
+
+未登录用户可以游客身份进入直播间观战，群聊必须登录（与 Android / iOS SDK 0.2.1 一致）。session 不传 `liveUserId` / `liveToken` 即为游客：
+
+```js
+const game = CocosGameWeb.open({
+  container: document.getElementById('GameContainer'),
+  gameUrl: 'https://niuniu-web-test.pages.dev/',
+  session: {
+    sceneType: 1,                // 游客仅支持直播间
+    sceneId: '3947124',
+    // deviceId: 'h5-xxx',       // 可选：1~128 个字符，不含空白与控制字符；不传时自动生成并本地复用
+  },
+  onEvent(name, payload) {
+    if (name === 'auth.login_required') showLoginPrompt(payload.action);
+  },
+});
+```
+
+- 游客只能观战：牌桌不显示右上角余额，下注阶段不弹下注窗，也不通知宿主。
+- 需要登录的操作统一通过 `onEvent('auth.login_required', { action })` 通知宿主，游戏内不弹提示：`join` 点击立即加入、`records` 点击记录与规则、`fullscreen` 点击全屏（不会进入全屏）。
+- 建议留在游戏页提示登录或跳转登录页；登录成功后再 `game.close()`，并用登录会话重新 `CocosGameWeb.open`。不要在事件回调里直接关闭牌桌。
+- 带了任一登录字段即按登录严格校验，不会降级为游客。
 
 ## 手机竖屏宿主弹窗（0.1.10）
 

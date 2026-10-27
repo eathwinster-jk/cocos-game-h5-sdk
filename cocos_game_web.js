@@ -980,7 +980,9 @@
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
-   *   session              { liveUserId, imUserId, liveToken, sceneType, sceneId, tableId?, clientVersion?, deviceType? }
+   *   session              登录：{ liveUserId, imUserId, liveToken, sceneType, sceneId, tableId?, clientVersion?, deviceType? }
+   *                        游客：{ sceneType: 1, sceneId, deviceId?, tableId?, clientVersion?, deviceType? }，不传 deviceId 时自动生成并本地复用；
+   *                        游客仅限直播间且只能观战（群聊必须登录），入座、查看记录、进入全屏时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' }) 通知宿主登录，下注阶段不弹窗
    *   showBackButton       是否显示牌桌返回按钮，默认 true
    *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true
    *   onBack()                       改写返回按钮：传入后由宿主处理（玩家在座时游戏会先确认离座），默认关闭游戏

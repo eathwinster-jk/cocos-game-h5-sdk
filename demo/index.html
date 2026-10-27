@@ -66,7 +66,7 @@
       <input id="MaskOpacity" type="number" min="0" max="1" step="0.1" placeholder="0~1" style="width:72px">
       <label><input id="HideMask" type="checkbox"> 透明</label>
     </div>
-    <div class="actions"><button type="submit">打开游戏</button><button id="MiniButton" type="button">迷你条</button><button id="CloseButton" type="button">关闭游戏</button></div>
+    <div class="actions"><button type="submit">打开游戏</button><button id="GuestButton" type="button">游客观战</button><button id="MiniButton" type="button">迷你条</button><button id="CloseButton" type="button">关闭游戏</button></div>
   </form>
   <div id="Log"></div>
 </main>
@@ -78,6 +78,9 @@
   const IS_ON_GAME_SITE = /\/sdk\/demo\/(index\.html)?$/.test(location.pathname);
   const LOGIN_PRODUCT_ID = '4';
   const LOGIN_CLIENT_VERSION = '1.120';
+  // 游客仅限直播间（群聊必须登录），测试直播间编号
+  const GUEST_SCENE_ID = '3947124';
+  const LOGIN_REQUIRED_EVENT = 'auth.login_required';
   let game = null;
 
   function appendLog(message) {
@@ -284,6 +287,29 @@
 
   function openGame(event) {
     event.preventDefault();
+    openGameWithSession({
+      liveUserId: Number(readValue('LiveUserId')),
+      imUserId: Number(readValue('ImUserId')),
+      liveToken: readValue('LiveToken'),
+      sceneType: Number(readValue('SceneType')),
+      sceneId: readValue('SceneId'),
+      clientVersion: '1.0.0',
+      deviceType: 'H5',
+    });
+  }
+
+  // 游客会话不传 UID / Token，deviceId 不传时由 SDK 生成并在本地复用
+  function openGuestGame() {
+    openGameWithSession({ sceneType: 1, sceneId: GUEST_SCENE_ID, clientVersion: '1.0.0', deviceType: 'H5' });
+  }
+
+  // 游客入座、查看记录、全屏时由宿主提示登录，留在游戏页；正式宿主可拉起登录页，登录成功后再关闭并用登录会话重新打开
+  function handleLoginRequired(payload) {
+    appendLog(`需要登录：${payload?.action ?? ''}`);
+    window.alert('请先登录后再入座、查看记录或全屏观看');
+  }
+
+  function openGameWithSession(session) {
     if (game) game.close();
     resetHostUi();
     document.getElementById('GameContainer').classList.remove('game-mini');
@@ -298,21 +324,14 @@
       onFullscreenRequest: isChecked('CustomFullscreen') ? toggleContainerFullscreen : undefined,
       container: document.getElementById('GameContainer'),
       gameUrl: readValue('GameUrl'),
-      session: {
-        liveUserId: Number(readValue('LiveUserId')),
-        imUserId: Number(readValue('ImUserId')),
-        liveToken: readValue('LiveToken'),
-        sceneType: Number(readValue('SceneType')),
-        sceneId: readValue('SceneId'),
-        clientVersion: '1.0.0',
-        deviceType: 'H5',
-      },
+      session,
       onReady() { appendLog('游戏已启动'); },
       onError(error) { appendLog(`启动失败：${error.message}`); },
       onBack() { appendLog('牌桌返回，关闭游戏'); game.close(); game = null; },
       onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
       onEvent(name, payload) {
         appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`);
+        if (name === LOGIN_REQUIRED_EVENT) handleLoginRequired(payload);
         updateBalance(name, payload);
       },
       onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
@@ -352,6 +371,7 @@
   document.getElementById('GameUrl').value = new URLSearchParams(location.search).get('gameUrl') || defaultGameUrl;
   document.getElementById('LoginForm').addEventListener('submit', loginForDemo);
   document.getElementById('SessionForm').addEventListener('submit', openGame);
+  document.getElementById('GuestButton').addEventListener('click', openGuestGame);
   document.getElementById('MiniButton').addEventListener('click', () => {
     setGameMiniMode(!document.getElementById('GameContainer').classList.contains('game-mini'));
   });
