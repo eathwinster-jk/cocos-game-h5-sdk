@@ -50,7 +50,7 @@ const game = CocosGameWeb.open({
   session: {
     sceneType: 1,                // 游客仅支持直播间
     sceneId: '3947124',
-    // deviceId: 'h5-xxx',       // 可选：1~128 个字符，不含空白与控制字符；不传时自动生成并本地复用
+    deviceId: 'h5-xxx',          // 建议传入宿主自己的稳定设备号；1~128 个字符，不含空白与控制字符
   },
   onEvent(name, payload) {
     if (name === 'auth.login_required') showLoginPrompt(payload.action);
@@ -62,6 +62,7 @@ const game = CocosGameWeb.open({
 - 需要登录的操作统一通过 `onEvent('auth.login_required', { action })` 通知宿主，游戏内不弹提示：`join` 点击立即加入、`records` 点击记录与规则、`fullscreen` 点击全屏（不会进入全屏）。
 - 建议留在游戏页提示登录或跳转登录页；登录成功后再 `game.close()`，并用登录会话重新 `CocosGameWeb.open`。不要在事件回调里直接关闭牌桌。
 - 带了任一登录字段即按登录严格校验，不会降级为游客。
+- 建议宿主传入稳定的 `deviceId`。不传时 SDK 自动生成并保存在游戏域名的 localStorage，但 iframe 属于第三方存储，Safari 等浏览器会隔离或清理，游客编号可能变化。
 
 ## 手机竖屏宿主弹窗（0.1.10）
 
