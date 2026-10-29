@@ -80,7 +80,6 @@
   const LOGIN_CLIENT_VERSION = '1.120';
   // 游客仅限直播间（群聊必须登录），测试直播间编号
   const GUEST_SCENE_ID = '3947124';
-  const LOGIN_REQUIRED_EVENT = 'auth.login_required';
   let game = null;
 
   function appendLog(message) {
@@ -274,7 +273,7 @@
   }
 
   function updateBalance(name, payload) {
-    if (name !== 'wallet.balance_changed' || !Number.isSafeInteger(payload.balanceCent)) return;
+    if (name !== CocosGameWeb.Events.WALLET_BALANCE_CHANGED || !Number.isSafeInteger(payload.balanceCent)) return;
     document.getElementById('Balance').textContent = `钱包余额：${formatCent(payload.balanceCent)}`;
   }
 
@@ -331,10 +330,12 @@
       onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
       onEvent(name, payload) {
         appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`);
-        if (name === LOGIN_REQUIRED_EVENT) handleLoginRequired(payload);
+        if (name === CocosGameWeb.Events.LOGIN_REQUIRED) handleLoginRequired(payload);
         updateBalance(name, payload);
       },
       onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
+      onPlayingStateChange(isPlaying) { appendLog(isPlaying ? '已入座' : '已离座（观战）'); },
+      onClose() { appendLog('游戏已关闭'); },
       onExpandRequest() { setGameMiniMode(false); },
     });
   }

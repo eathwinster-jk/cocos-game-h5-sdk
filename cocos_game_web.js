@@ -1000,6 +1000,8 @@
    *                                  （以上宿主回调仅在 hostDialogs 未关闭时生效，全屏时由游戏内弹窗展示）
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
+   *   onPlayingStateChange(isPlaying) 在座参与状态变化：入座为 true，点击退出确认离座成功后为 false
+   *   onClose()                      游戏已关闭并移出容器（返回默认关闭、会话失效或宿主调用 close）
    */
   function open(options) {
     validateOptions(options);
@@ -1111,6 +1113,7 @@
       isClosed = true;
       global.removeEventListener('message', handleMessage);
       iframe.remove();
+      invokeCallback('onClose', options.onClose);
     }
 
     function handleMessage(event) {
@@ -1140,6 +1143,8 @@
         invokeCallback('onSessionInvalid', options.onSessionInvalid, data.message || '游戏会话已失效');
       } else if (data.type === 'event') {
         invokeCallback('onEvent', options.onEvent, data.event, data.payload || {});
+      } else if (data.type === 'playingState') {
+        invokeCallback('onPlayingStateChange', options.onPlayingStateChange, Boolean(data.isPlaying));
       } else if (data.type === 'fullscreenRequest') {
         isDialogExpanded = false;
         requestFullscreen(data.isFullscreen);
@@ -1201,5 +1206,12 @@
     });
   }
 
-  global.CocosGameWeb = Object.freeze({ open, createClientBetNo });
+  // 游戏发给宿主的通用事件名（onEvent 第一个参数）与 auth.login_required 载荷 action 取值
+  const EVENTS = Object.freeze({
+    LOGIN_REQUIRED: 'auth.login_required',
+    WALLET_BALANCE_CHANGED: 'wallet.balance_changed',
+  });
+  const LOGIN_ACTIONS = Object.freeze({ JOIN: 'join', RECORDS: 'records', FULLSCREEN: 'fullscreen' });
+
+  global.CocosGameWeb = Object.freeze({ open, createClientBetNo, Events: EVENTS, LoginActions: LOGIN_ACTIONS });
 }(window));

@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.1/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.2/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -39,6 +39,29 @@
 
 宿主页面域名需加入游戏白名单后才能嵌入，请联系我们登记域名。
 
+## 离座、关闭与登录失效（0.2.2）
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  onPlayingStateChange(isPlaying) { // 入座为 true；点击「退出」确认离座成功后为 false
+    updateMySeatState(isPlaying);
+  },
+  onClose() {                       // 游戏已关闭并移出容器
+    showMyGameEntry();
+  },
+  onSessionInvalid(message) {       // 登录失效（如 Token 过期），SDK 已关闭游戏
+    goToLogin(message);
+  },
+});
+```
+
+- `onPlayingStateChange` 只在是否在座变化时回调，打开牌桌后会先回调一次当前状态；对应 Android `onPlayingStateChanged`、iOS `gameSDKDidChangePlayingState:`。
+- `onClose` 在返回按钮默认关闭、登录失效、宿主调用 `game.close()` 时都会回调。
+- 打开游戏时登录态已失效（大厅返回 401），SDK 关闭游戏并回调 `onSessionInvalid`，不再停留在黑屏；网络异常等其他启动失败会在游戏区域显示原因和「重试」按钮，同时回调 `onError`。
+- 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN`。
+- 手机竖屏内嵌按竖屏设计稿展示，进入全屏后沿用竖屏布局整体等比放大。
+
 ## 游客观战（0.2.1）
 
 未登录用户可以游客身份进入直播间观战，群聊必须登录（与 Android / iOS SDK 0.2.1 一致）。session 不传 `liveUserId` / `liveToken` 即为游客：
@@ -53,7 +76,7 @@ const game = CocosGameWeb.open({
     deviceId: 'h5-xxx',          // 建议传入宿主自己的稳定设备号；1~128 个字符，不含空白与控制字符
   },
   onEvent(name, payload) {
-    if (name === 'auth.login_required') showLoginPrompt(payload.action);
+    if (name === CocosGameWeb.Events.LOGIN_REQUIRED) showLoginPrompt(payload.action);
   },
 });
 ```
