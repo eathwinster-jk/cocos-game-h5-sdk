@@ -976,16 +976,23 @@
   }
 
   /**
-   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords, close }。
+   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords,
+   * exitGame, setBackButtonVisible, setCollapseButtonVisible, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
    *   session              登录：{ liveUserId, imUserId, liveToken, sceneType, sceneId, tableId?, clientVersion?, deviceType? }
    *                        游客：{ sceneType: 1, sceneId, deviceId?, tableId?, clientVersion?, deviceType? }，不传 deviceId 时自动生成并本地复用；
-   *                        游客仅限直播间且只能观战（群聊必须登录），入座、查看记录、进入全屏时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' }) 通知宿主登录，下注阶段不弹窗
-   *   showBackButton       是否显示牌桌返回按钮，默认 true
+   *                        游客只能观战（直播间与群聊相同），入座、查看记录、进入全屏时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' }) 通知宿主登录，下注阶段不弹窗
+   *   showBackButton       是否显示牌桌返回按钮，默认 true；打开后可调用 setBackButtonVisible 切换
    *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true
-   *   onBack()                       改写返回按钮：传入后由宿主处理（玩家在座时游戏会先确认离座），默认关闭游戏
+   *   showCollapseButton   是否显示竖屏收起按钮（点击缩成迷你条），默认 false；打开后可调用 setCollapseButtonVisible 切换
+   *   onBackClick(info)              竖屏点击牌桌返回或迷你条退出：未传时不处理（游戏不会自行退出），宿主据 info 自行决定：
+   *                                  exitGame() 在座时先离座再关闭；close() 保留座位直接关闭；info.isInGame 为 true 时不能离座，需要离开请用 close()。
+   *                                  info { tableId, roundId, stage, countdownSeconds, playMode, isPlaying, canLeave, isInGame, hasBet, isGuest, isMiniMode, isFullscreen }，
+   *                                  isInGame 为 true 时在座且本局未结束不能离座，宿主可提示稍后再试；全屏时返回按钮退回内嵌，不回调
+   *   onBack()                       已废弃：牌桌返回改为 onBackClick
+   *   onCollapseRequest()            玩家点击竖屏收起按钮：宿主把容器调整为 362:50 横条后调用 setMiniMode(true)；未传时直接进入迷你模式
    *   onFullscreenRequest(isFullscreen) 改写大屏按钮：传入后由宿主处理，默认撑满 iframe
    *   dialogScope          弹窗范围：'game'（默认，只在游戏区域内）或 'fullscreen'（弹窗时临时全屏，关闭后还原）
    *   dialogMask           弹窗遮罩：{ visible?: boolean, color?: '#RRGGBB', opacity?: 0~1 }，不传用游戏默认渐变；
@@ -1001,7 +1008,7 @@
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    *   onPlayingStateChange(isPlaying) 在座参与状态变化：入座为 true，点击退出确认离座成功后为 false
-   *   onClose()                      游戏已关闭并移出容器（返回默认关闭、会话失效或宿主调用 close）
+   *   onClose()                      游戏已关闭并移出容器（exitGame 离座完成、会话失效或宿主调用 close）
    */
   function open(options) {
     validateOptions(options);
@@ -1018,6 +1025,9 @@
     let isMiniMode = false;
     let miniBackgroundColor;
     let bodyOverflow = '';
+    let isGameStarted = false;
+    let showBackButton = options.showBackButton !== false;
+    let showCollapseButton = options.showCollapseButton === true;
 
     function postToGame(type, data) {
       if (isClosed || !iframe.contentWindow) return;
@@ -1085,6 +1095,49 @@
       else setMiniMode(false);
     }
 
+    /**
+     * 竖屏收起按钮：交给宿主缩小容器，未传回调时直接进入迷你模式。
+     */
+    function handleCollapseRequest() {
+      if (typeof options.onCollapseRequest === 'function') invokeCallback('onCollapseRequest', options.onCollapseRequest);
+      else setMiniMode(true, miniBackgroundColor);
+    }
+
+    /**
+     * 宿主确认退出：游戏已启动时交给游戏离座后关闭，否则直接关闭。
+     */
+    function exitGame() {
+      if (isClosed) return;
+      if (!isGameStarted) {
+        close();
+        return;
+      }
+      postToGame('exitGame', {});
+    }
+
+    /**
+     * 把最新返回/收起按钮显隐发给游戏。
+     */
+    function postUiOptions() {
+      postToGame('uiOptions', { ui: { showBackButton, showCollapseButton } });
+    }
+
+    /**
+     * 更新返回按钮显隐。
+     */
+    function setBackButtonVisible(value) {
+      showBackButton = Boolean(value);
+      postUiOptions();
+    }
+
+    /**
+     * 更新竖屏收起按钮显隐。
+     */
+    function setCollapseButtonVisible(value) {
+      showCollapseButton = Boolean(value);
+      postUiOptions();
+    }
+
     function requestFullscreen(value) {
       if (isMiniMode) return;
       if (typeof options.onFullscreenRequest === 'function') {
@@ -1124,14 +1177,17 @@
         postToGame('session', {
           session: options.session,
           ui: {
-            showBackButton: options.showBackButton !== false,
+            showBackButton,
             showFullscreenButton: options.showFullscreenButton !== false,
+            showCollapseButton,
             dialogMask: options.dialogMask || null,
             hostDialogs: hostDialogs !== null,
+            hostBack: true,
           },
         });
         if (isMiniMode) postMiniMode();
       } else if (data.type === 'started') {
+        isGameStarted = true;
         invokeCallback('onReady', options.onReady);
       } else if (data.type === 'error') {
         invokeCallback('onError', options.onError, new Error(data.message || '游戏启动失败'));
@@ -1148,6 +1204,12 @@
       } else if (data.type === 'fullscreenRequest') {
         isDialogExpanded = false;
         requestFullscreen(data.isFullscreen);
+      } else if (data.type === 'backClick') {
+        invokeCallback('onBackClick', options.onBackClick, data.info || {});
+      } else if (data.type === 'collapseRequest') {
+        handleCollapseRequest();
+      } else if (data.type === 'closeRequest') {
+        close();
       } else if (data.type === 'expandRequest') {
         handleExpandRequest();
       } else if (data.type === 'dialogChange') {
@@ -1202,6 +1264,19 @@
       loadMoreRecords(isHistory) {
         return !isClosed && hostDialogs !== null && hostDialogs.loadMoreRecords(isHistory);
       },
+      /**
+       * 宿主确认退出（通常在 onBackClick 中调用）：在座时游戏先离座，离座成功后关闭并回调 onClose；
+       * 本局未结束不能离座时游戏内提示且不关闭。游戏尚未启动完成时直接关闭。
+       */
+      exitGame,
+      /**
+       * 切换牌桌返回按钮显隐。
+       */
+      setBackButtonVisible,
+      /**
+       * 切换竖屏收起按钮显隐，仅竖屏非迷你条时显示。
+       */
+      setCollapseButtonVisible,
       close,
     });
   }

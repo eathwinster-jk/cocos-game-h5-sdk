@@ -50,6 +50,7 @@
     <span>按钮</span>
     <div>
       <label><input id="HideBack" type="checkbox"> 隐藏返回</label>
+      <label><input id="ShowCollapse" type="checkbox" checked> 显示收起</label>
       <label><input id="HideFullscreen" type="checkbox"> 隐藏大屏</label>
       <label><input id="CustomFullscreen" type="checkbox"> 自定义大屏</label>
     </div>
@@ -78,7 +79,7 @@
   const IS_ON_GAME_SITE = /\/sdk\/demo\/(index\.html)?$/.test(location.pathname);
   const LOGIN_PRODUCT_ID = '4';
   const LOGIN_CLIENT_VERSION = '1.120';
-  // 游客仅限直播间（群聊必须登录），测试直播间编号
+  // 游客直播间与群聊均可观战，此处使用测试直播间编号
   const GUEST_SCENE_ID = '3947124';
   let game = null;
 
@@ -255,6 +256,22 @@
     if (!document.getElementById('HostRecordsPanel').hidden) renderHostRecords();
   }
 
+  // 牌桌点击返回示例，由宿主决定离开方式：exitGame 离座后关闭，close 保留座位直接关闭；本局进行中只能保留座位离开
+  function handleBackClick(info) {
+    appendLog(`牌桌点击返回：${JSON.stringify(info)}`);
+    if (!info.isPlaying) {
+      if (window.confirm('确定要离开游戏吗？')) game?.exitGame();
+      return;
+    }
+    if (info.isInGame) {
+      if (window.confirm('本局进行中，可保留座位离开，确定离开？')) game?.close();
+      return;
+    }
+    if (!window.confirm('你已在座，确定离开游戏？')) return;
+    if (window.confirm('是否离座？确定 = 离座并离开，取消 = 保留座位离开')) game?.exitGame();
+    else game?.close();
+  }
+
   // 宿主自绘退出确认示例
   function confirmHostExit(decide) {
     decide(window.confirm('当前游戏正在进行中，离开后游戏将结束并结算。确定离开？'));
@@ -319,6 +336,7 @@
       onDialogChange(isVisible) { appendLog(isVisible ? '游戏弹窗打开' : '游戏弹窗关闭'); },
       hostDialogs: !isChecked('DisableHostDialogs'),
       showBackButton: !isChecked('HideBack'),
+      showCollapseButton: isChecked('ShowCollapse'),
       showFullscreenButton: !isChecked('HideFullscreen'),
       onFullscreenRequest: isChecked('CustomFullscreen') ? toggleContainerFullscreen : undefined,
       container: document.getElementById('GameContainer'),
@@ -326,7 +344,8 @@
       session,
       onReady() { appendLog('游戏已启动'); },
       onError(error) { appendLog(`启动失败：${error.message}`); },
-      onBack() { appendLog('牌桌返回，关闭游戏'); game.close(); game = null; },
+      onBackClick: handleBackClick,
+      onCollapseRequest() { setGameMiniMode(true); },
       onSessionInvalid(message) { appendLog(`会话失效：${message}`); game = null; },
       onEvent(name, payload) {
         appendLog(`游戏事件：${name} ${JSON.stringify(payload)}`);
@@ -335,7 +354,12 @@
       },
       onFullscreenChange(isFullscreen) { appendLog(isFullscreen ? '进入全屏' : '退出全屏'); },
       onPlayingStateChange(isPlaying) { appendLog(isPlaying ? '已入座' : '已离座（观战）'); },
-      onClose() { appendLog('游戏已关闭'); },
+      onClose() {
+        appendLog('游戏已关闭');
+        game = null;
+        resetHostUi();
+        document.getElementById('GameContainer').classList.remove('game-mini');
+      },
       onExpandRequest() { setGameMiniMode(false); },
     });
   }
@@ -376,6 +400,8 @@
   document.getElementById('MiniButton').addEventListener('click', () => {
     setGameMiniMode(!document.getElementById('GameContainer').classList.contains('game-mini'));
   });
+  document.getElementById('HideBack').addEventListener('change', () => game?.setBackButtonVisible(!isChecked('HideBack')));
+  document.getElementById('ShowCollapse').addEventListener('change', () => game?.setCollapseButtonVisible(isChecked('ShowCollapse')));
   document.getElementById('CloseButton').addEventListener('click', () => {
     if (game) game.close();
     game = null;

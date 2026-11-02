@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.2.2/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.0/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -39,6 +39,49 @@
 
 宿主页面域名需加入游戏白名单后才能嵌入，请联系我们登记域名。
 
+## 返回与收起（0.3.0）
+
+竖屏点击牌桌返回（或迷你条退出）时，游戏只通知宿主并带上牌局参数，是否退出、如何提示由宿主决定：
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  showBackButton: true,       // 牌桌返回按钮，默认显示
+  showCollapseButton: true,   // 竖屏收起按钮（点击缩成迷你条），默认隐藏
+  onBackClick(info) {
+    if (!info.isPlaying) {          // 未在座（含游客）
+      if (confirm('确定要离开游戏吗？')) game.exitGame();
+      return;
+    }
+    if (info.isInGame) {            // 在座且本局未结束，不能离座
+      if (confirm('本局进行中，可保留座位离开')) game.close();
+      return;
+    }
+    if (confirm('是否离座？')) game.exitGame(); // 离座后关闭
+    else game.close();                        // 保留座位关闭
+  },
+  onCollapseRequest() {             // 玩家点击收起按钮
+    container.classList.add('game-mini');
+    game.setMiniMode(true, '#F4F5F8');
+  },
+});
+
+game.setBackButtonVisible(false);     // 随时隐藏/显示返回按钮
+game.setCollapseButtonVisible(true);  // 随时隐藏/显示收起按钮
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `exitGame()` | 在座时先离座再关闭，完成后回调 `onClose`；本局未结束不能离座时游戏内提示且不关闭 |
+| `close()` | 不离座（保留座位）直接关闭，回调 `onClose` |
+
+`info` 字段：`tableId`、`roundId`、`stage`、`countdownSeconds`、`playMode`、`isPlaying`（是否在座）、`canLeave`（当前能否离座）、`isInGame`（在座且本局未结束）、`hasBet`、`isGuest`、`isMiniMode`、`isFullscreen`。
+
+- 未传 `onBackClick` 时点击返回不做任何处理，游戏不会自行退出；旧回调 `onBack` 已废弃。
+- 全屏时返回按钮退回内嵌，不回调 `onBackClick`。
+- 未传 `onCollapseRequest` 时点击收起由 SDK 直接进入迷你模式，容器尺寸需宿主自行调整。
+- 与 Android `onBackClicked` / `exitGame` / `closeGame`、iOS `gameSDKDidClickBack:` / `exitGame` / `close` 一致。
+
 ## 离座、关闭与登录失效（0.2.2）
 
 ```js
@@ -57,7 +100,7 @@ const game = CocosGameWeb.open({
 ```
 
 - `onPlayingStateChange` 只在是否在座变化时回调，打开牌桌后会先回调一次当前状态；对应 Android `onPlayingStateChanged`、iOS `gameSDKDidChangePlayingState:`。
-- `onClose` 在返回按钮默认关闭、登录失效、宿主调用 `game.close()` 时都会回调。
+- `onClose` 在 `exitGame` 离座关闭、登录失效、宿主调用 `game.close()` 时都会回调。
 - 打开游戏时登录态已失效（大厅返回 401），SDK 关闭游戏并回调 `onSessionInvalid`，不再停留在黑屏；网络异常等其他启动失败会在游戏区域显示原因和「重试」按钮，同时回调 `onError`。
 - 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN`。
 - 手机竖屏内嵌按竖屏设计稿展示，进入全屏后沿用竖屏布局整体等比放大。
@@ -163,7 +206,7 @@ game.setMiniMode(true, '#F4F5F8');
 
 - 先调整容器尺寸再调用 `setMiniMode`；圆角由游戏绘制，圆角外填充 `backgroundColor`（`#RRGGBB`，缺省白色）。
 - 迷你模式下不可进入全屏，处于全屏时进入迷你条会先退出全屏。
-- 退出按钮与牌桌返回按钮行为一致；未传 `onExpandRequest` 时点击展开由 SDK 直接调用 `setMiniMode(false)`，容器尺寸需宿主自行恢复。
+- 迷你条退出按钮与牌桌返回按钮一致，回调 `onBackClick`（`info.isMiniMode` 为 true）；未传 `onExpandRequest` 时点击展开由 SDK 直接调用 `setMiniMode(false)`，容器尺寸需宿主自行恢复。
 
 ## 目录
 
