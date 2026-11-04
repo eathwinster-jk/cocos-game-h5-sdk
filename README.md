@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.0/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.1/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -102,7 +102,7 @@ const game = CocosGameWeb.open({
 - `onPlayingStateChange` 只在是否在座变化时回调，打开牌桌后会先回调一次当前状态；对应 Android `onPlayingStateChanged`、iOS `gameSDKDidChangePlayingState:`。
 - `onClose` 在 `exitGame` 离座关闭、登录失效、宿主调用 `game.close()` 时都会回调。
 - 打开游戏时登录态已失效（大厅返回 401），SDK 关闭游戏并回调 `onSessionInvalid`，不再停留在黑屏；网络异常等其他启动失败会在游戏区域显示原因和「重试」按钮，同时回调 `onError`。
-- 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN`。
+- 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN` / `BET`。
 - 手机竖屏内嵌按竖屏设计稿展示，进入全屏后沿用竖屏布局整体等比放大。
 
 ## 游客观战（0.2.1）
@@ -125,7 +125,7 @@ const game = CocosGameWeb.open({
 ```
 
 - 游客只能观战：牌桌不显示右上角余额，下注阶段不弹下注窗，也不通知宿主。
-- 需要登录的操作统一通过 `onEvent('auth.login_required', { action })` 通知宿主，游戏内不弹提示：`join` 点击立即加入、`records` 点击记录与规则、`fullscreen` 点击全屏（不会进入全屏）。
+- 需要登录的操作统一通过 `onEvent('auth.login_required', { action })` 通知宿主，游戏内不弹提示：`join` 点击立即加入、`records` 点击记录与规则、`fullscreen` 点击全屏（不会进入全屏）、`bet` 观战时下注阶段点击在桌用户头像跟注（0.3.1 起）。
 - 建议留在游戏页提示登录或跳转登录页；登录成功后再 `game.close()`，并用登录会话重新 `CocosGameWeb.open`。不要在事件回调里直接关闭牌桌。
 - 带了任一登录字段即按登录严格校验，不会降级为游客。
 - 建议宿主传入稳定的 `deviceId`。不传时 SDK 自动生成并保存在游戏域名的 localStorage，但 iframe 属于第三方存储，Safari 等浏览器会隔离或清理，游客编号可能变化。

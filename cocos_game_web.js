@@ -983,7 +983,7 @@
    *   gameUrl              游戏页地址
    *   session              登录：{ liveUserId, imUserId, liveToken, sceneType, sceneId, tableId?, clientVersion?, deviceType? }
    *                        游客：{ sceneType: 1, sceneId, deviceId?, tableId?, clientVersion?, deviceType? }，不传 deviceId 时自动生成并本地复用；
-   *                        游客只能观战（直播间与群聊相同），入座、查看记录、进入全屏时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' }) 通知宿主登录，下注阶段不弹窗
+   *                        游客只能观战（直播间与群聊相同），入座、查看记录、进入全屏、点头像跟注时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' | 'bet' }) 通知宿主登录，下注阶段不弹窗
    *   showBackButton       是否显示牌桌返回按钮，默认 true；打开后可调用 setBackButtonVisible 切换
    *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true
    *   showCollapseButton   是否显示竖屏收起按钮（点击缩成迷你条），默认 false；打开后可调用 setCollapseButtonVisible 切换
@@ -1286,7 +1286,7 @@
     LOGIN_REQUIRED: 'auth.login_required',
     WALLET_BALANCE_CHANGED: 'wallet.balance_changed',
   });
-  const LOGIN_ACTIONS = Object.freeze({ JOIN: 'join', RECORDS: 'records', FULLSCREEN: 'fullscreen' });
+  const LOGIN_ACTIONS = Object.freeze({ JOIN: 'join', RECORDS: 'records', FULLSCREEN: 'fullscreen', BET: 'bet' });
 
   global.CocosGameWeb = Object.freeze({ open, createClientBetNo, Events: EVENTS, LoginActions: LOGIN_ACTIONS });
 }(window));
