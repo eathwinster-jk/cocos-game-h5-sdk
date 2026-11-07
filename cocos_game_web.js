@@ -341,7 +341,7 @@
         dismiss();
         return;
       }
-      if (nextRoundId === roundId && isShowing) return;
+      if (nextRoundId === roundId && isShowing && options.reopen !== true) return;
       roundId = nextRoundId;
       areas = nextAreas;
       chipsCent = nextChips;
@@ -783,9 +783,11 @@
     const pendingBetNos = new Set();
     const succeededBetNos = new Set();
 
-    function openRound(options) {
-      if (currentOptions && currentOptions.roundId === options.roundId) return false;
-      succeededBetNos.clear();
+    // 同一局重复下发返回 false；观战点头像跟注带 isReopen，同一局按新注区重新弹出并保留本局已成功单号。
+    function openRound(options, isReopen) {
+      const isSameRound = Boolean(currentOptions) && currentOptions.roundId === options.roundId;
+      if (isSameRound && !isReopen) return false;
+      if (!isSameRound) succeededBetNos.clear();
       currentOptions = options;
       return true;
     }
@@ -872,7 +874,7 @@
         betCard?.dismiss();
         return;
       }
-      const isNewRound = betCoordinator.openRound(options);
+      const isNewRound = betCoordinator.openRound(options, data.reopen === true);
       if (isHostHandlingBet) {
         if (isNewRound) invokeCallback('onBetOptions', context.onBetOptions, options);
         return;

@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.1/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.2/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -182,7 +182,8 @@ game.queryRecords({ isHistory: true });
 game.loadMoreRecords(true);
 ```
 
-- 同一局只回调一次 `onBetOptions`；从全屏回到竖屏时会以剩余倒计时重新回调。
+- 同一局通常只回调一次 `onBetOptions`；从全屏回到竖屏时会以剩余倒计时重新回调。
+- 0.3.2 起观战时点在桌用户头像「跟注」，同一局内会再次回调 `onBetOptions`，`areas` 只含被跟注的座位，请按新的 `areas` 刷新面板。
 - `clientBetNo` 最长 64 位，用于幂等：失败可用同一单号重试，成功后重复提交会被拒绝。
 - 金额单位均为分。
 
