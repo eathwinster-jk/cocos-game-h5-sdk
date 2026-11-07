@@ -979,7 +979,7 @@
 
   /**
    * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords,
-   * exitGame, setBackButtonVisible, setCollapseButtonVisible, close }。
+   * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
@@ -989,6 +989,8 @@
    *   showBackButton       是否显示牌桌返回按钮，默认 true；打开后可调用 setBackButtonVisible 切换
    *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true
    *   showCollapseButton   是否显示竖屏收起按钮（点击缩成迷你条），默认 false；打开后可调用 setCollapseButtonVisible 切换
+   *   showGameToast        竖屏是否展示游戏内提示，默认 true；竖屏提示始终通过 onEvent('game.toast', { message, level }) 通知宿主，
+   *                        level 为 'error' | 'info' | 'success'；传 false 后由宿主自行展示，全屏仍由游戏展示；打开后可调用 setGameToastVisible 切换
    *   onBackClick(info)              竖屏点击牌桌返回或迷你条退出：未传时不处理（游戏不会自行退出），宿主据 info 自行决定：
    *                                  exitGame() 在座时先离座再关闭；close() 保留座位直接关闭；info.isInGame 为 true 时不能离座，需要离开请用 close()。
    *                                  info { tableId, roundId, stage, countdownSeconds, playMode, isPlaying, canLeave, isInGame, hasBet, isGuest, isMiniMode, isFullscreen }，
@@ -1030,6 +1032,7 @@
     let isGameStarted = false;
     let showBackButton = options.showBackButton !== false;
     let showCollapseButton = options.showCollapseButton === true;
+    let showGameToast = options.showGameToast !== false;
 
     function postToGame(type, data) {
       if (isClosed || !iframe.contentWindow) return;
@@ -1118,10 +1121,18 @@
     }
 
     /**
-     * 把最新返回/收起按钮显隐发给游戏。
+     * 把最新返回/收起按钮显隐与竖屏游戏内提示开关发给游戏。
      */
     function postUiOptions() {
-      postToGame('uiOptions', { ui: { showBackButton, showCollapseButton } });
+      postToGame('uiOptions', { ui: { showBackButton, showCollapseButton, showGameToast } });
+    }
+
+    /**
+     * 更新竖屏游戏内提示开关；关闭后竖屏提示只通过 game.toast 事件交给宿主。
+     */
+    function setGameToastVisible(value) {
+      showGameToast = Boolean(value);
+      postUiOptions();
     }
 
     /**
@@ -1182,6 +1193,7 @@
             showBackButton,
             showFullscreenButton: options.showFullscreenButton !== false,
             showCollapseButton,
+            showGameToast,
             dialogMask: options.dialogMask || null,
             hostDialogs: hostDialogs !== null,
             hostBack: true,
@@ -1279,16 +1291,28 @@
        * 切换竖屏收起按钮显隐，仅竖屏非迷你条时显示。
        */
       setCollapseButtonVisible,
+      /**
+       * 切换竖屏游戏内提示；关闭后竖屏提示只经 onEvent('game.toast') 交给宿主展示。
+       */
+      setGameToastVisible,
       close,
     });
   }
 
-  // 游戏发给宿主的通用事件名（onEvent 第一个参数）与 auth.login_required 载荷 action 取值
+  // 游戏发给宿主的通用事件名（onEvent 第一个参数）、auth.login_required 载荷 action 取值与 game.toast 载荷 level 取值
   const EVENTS = Object.freeze({
     LOGIN_REQUIRED: 'auth.login_required',
     WALLET_BALANCE_CHANGED: 'wallet.balance_changed',
+    GAME_TOAST: 'game.toast',
   });
   const LOGIN_ACTIONS = Object.freeze({ JOIN: 'join', RECORDS: 'records', FULLSCREEN: 'fullscreen', BET: 'bet' });
+  const TOAST_LEVELS = Object.freeze({ ERROR: 'error', INFO: 'info', SUCCESS: 'success' });
 
-  global.CocosGameWeb = Object.freeze({ open, createClientBetNo, Events: EVENTS, LoginActions: LOGIN_ACTIONS });
+  global.CocosGameWeb = Object.freeze({
+    open,
+    createClientBetNo,
+    Events: EVENTS,
+    LoginActions: LOGIN_ACTIONS,
+    ToastLevels: TOAST_LEVELS,
+  });
 }(window));

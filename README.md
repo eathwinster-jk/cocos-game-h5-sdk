@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.2/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.3/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -82,6 +82,28 @@ game.setCollapseButtonVisible(true);  // 随时隐藏/显示收起按钮
 - 未传 `onCollapseRequest` 时点击收起由 SDK 直接进入迷你模式，容器尺寸需宿主自行调整。
 - 与 Android `onBackClicked` / `exitGame` / `closeGame`、iOS `gameSDKDidClickBack:` / `exitGame` / `close` 一致。
 
+## 竖屏提示交给宿主（0.3.3）
+
+竖屏下游戏弹出提示（如「加入失败，请稍后重试」）时，会通过 `onEvent` 回调 `game.toast`，载荷为 `{ message, level }`。宿主关闭游戏内提示后，可用自己的样式展示：
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  showGameToast: false,             // 竖屏不展示游戏内提示，默认 true
+  onEvent(event, payload) {
+    if (event === CocosGameWeb.Events.GAME_TOAST) {
+      showHostToast(payload.message, payload.level); // level：error（红）/ info（金）/ success（绿）
+    }
+  },
+});
+
+game.setGameToastVisible(true);     // 随时切换是否展示游戏内提示
+```
+
+- 竖屏提示无论是否关闭游戏内展示都会回调 `game.toast`；全屏横屏时提示由游戏展示，不回调。
+- `level` 取值可用常量 `CocosGameWeb.ToastLevels.ERROR` / `INFO` / `SUCCESS`。
+- 与 Android `setGameToastVisible` / `GameEvents.GAME_TOAST`、iOS `setGameToastVisible:` / `CocosGameEventGameToast` 一致。
+
 ## 离座、关闭与登录失效（0.2.2）
 
 ```js
@@ -102,7 +124,7 @@ const game = CocosGameWeb.open({
 - `onPlayingStateChange` 只在是否在座变化时回调，打开牌桌后会先回调一次当前状态；对应 Android `onPlayingStateChanged`、iOS `gameSDKDidChangePlayingState:`。
 - `onClose` 在 `exitGame` 离座关闭、登录失效、宿主调用 `game.close()` 时都会回调。
 - 打开游戏时登录态已失效（大厅返回 401），SDK 关闭游戏并回调 `onSessionInvalid`，不再停留在黑屏；网络异常等其他启动失败会在游戏区域显示原因和「重试」按钮，同时回调 `onError`。
-- 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN` / `BET`。
+- 事件名可使用常量：`CocosGameWeb.Events.LOGIN_REQUIRED`（`auth.login_required`）、`CocosGameWeb.Events.WALLET_BALANCE_CHANGED`（`wallet.balance_changed`）、`CocosGameWeb.Events.GAME_TOAST`（`game.toast`），登录提示的 `action` 取值为 `CocosGameWeb.LoginActions.JOIN` / `RECORDS` / `FULLSCREEN` / `BET`。
 - 手机竖屏内嵌按竖屏设计稿展示，进入全屏后沿用竖屏布局整体等比放大。
 
 ## 游客观战（0.2.1）
