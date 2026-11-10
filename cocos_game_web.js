@@ -907,6 +907,11 @@
       return true;
     }
 
+    function refreshRecords(isHistory) {
+      sendRecordsQuery('refresh', { isHistory: Boolean(isHistory), filterKey: RECORD_FILTER_ALL, periodIndex: 0, keyword: '' });
+      return true;
+    }
+
     function showRules(content) {
       if (isHostHandlingRecords) {
         invokeCallback('onShowRecords', context.onShowRecords, content);
@@ -974,11 +979,11 @@
       betCoordinator.reset();
     }
 
-    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords });
+    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords, refreshRecords });
   }
 
   /**
-   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords,
+   * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords, refreshRecords,
    * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
@@ -1277,6 +1282,12 @@
        */
       loadMoreRecords(isHistory) {
         return !isClosed && hostDialogs !== null && hostDialogs.loadMoreRecords(isHistory);
+      },
+      /**
+       * 宿主下拉刷新：按当前筛选条件重新拉取记录首页，结果经 onRecordsUpdated 回调；游戏打开即可调用（含迷你条）。
+       */
+      refreshRecords(isHistory) {
+        return !isClosed && hostDialogs !== null && hostDialogs.refreshRecords(isHistory);
       },
       /**
        * 宿主确认退出（通常在 onBackClick 中调用）：在座时游戏先离座，离座成功后关闭并回调 onClose；

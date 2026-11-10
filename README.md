@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.3/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.4/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -230,6 +230,29 @@ game.setMiniMode(true, '#F4F5F8');
 - 先调整容器尺寸再调用 `setMiniMode`；圆角由游戏绘制，圆角外填充 `backgroundColor`（`#RRGGBB`，缺省白色）。
 - 迷你模式下不可进入全屏，处于全屏时进入迷你条会先退出全屏。
 - 迷你条退出按钮与牌桌返回按钮一致，回调 `onBackClick`（`info.isMiniMode` 为 true）；未传 `onExpandRequest` 时点击展开由 SDK 直接调用 `setMiniMode(false)`，容器尺寸需宿主自行恢复。
+- 迷你条期间不弹下注（不回调 `onBetOptions`），声音暂停；展开后恢复声音，本局未下注会重新推送。
+
+## 预加载与刷新记录（0.3.4）
+
+进入群 / 直播间时打开游戏并立即缩成迷你条，游戏在后台加载并同步牌局，用户点入口展开即显示牌桌；也可再用宿主元素盖住容器实现隐藏预加载。容器须保持在页面中且尺寸不为 0，不要用 `display: none`、`visibility: hidden`、`opacity: 0` 或移出视口隐藏。
+
+```js
+// 进入群 / 直播间
+container.classList.add('game-mini');
+const game = CocosGameWeb.open({ container, gameUrl, session, onRecordsUpdated, onExpandRequest });
+game.setMiniMode(true, '#F4F5F8');
+
+// 用户点击游戏入口
+container.classList.remove('game-mini');
+game.setMiniMode(false);
+
+// 宿主下拉刷新记录：按当前筛选重新拉取第一页，结果经 onRecordsUpdated 返回
+game.refreshRecords(false);   // true 为历史场次
+```
+
+- `refreshRecords` 游戏打开即可调用（含迷你条），记录页未打开过也可以；游戏已关闭时返回 false。
+- 结果只在手机竖屏宿主弹窗模式下回调；游客调用时回调 `onEvent('auth.login_required', { action: 'records' })`。
+- 切换群 / 直播间时先 `close()` 再 `open`；离开时关闭，不要在群列表对每个群预加载。
 
 ## 目录
 
