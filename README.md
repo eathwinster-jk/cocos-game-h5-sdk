@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.4/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.5/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -158,8 +158,43 @@ const game = CocosGameWeb.open({
 
 - `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
 - `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
-- 下注卡片插入在游戏容器正下方，请为其预留约 120~200px 空间。
+- 下注卡片默认插入在游戏容器正下方，请为其预留约 120~200px 空间；也可以放进宿主自己的容器，见下一节。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
+
+## 竖屏下注弹窗：三种接入方式（0.3.5）
+
+竖屏下注界面可以直接用 SDK 提供的加注卡片，也可以宿主自绘；用 SDK 卡片时还能指定放在哪个容器里。全屏时统一用游戏内弹窗。
+
+| 方式 | 宿主要做的 | 界面 | 位置 |
+| --- | --- | --- | --- |
+| A. SDK 默认位置 | 什么都不用做 | SDK 加注卡片 | 游戏容器正下方 |
+| B. 放入宿主容器 | 传 `betContainer` 或调用 `setBetContainer` | SDK 加注卡片 | 宿主容器内，撑满宽度、无外边距 |
+| C. 宿主自绘 | 传 `onBetOptions` 等回调，调用 `submitBet` | 宿主界面 | 宿主决定 |
+
+优先级：传了 `onBetOptions` 时 `betContainer` 不生效；否则有 `betContainer` 用方式 B，没有用方式 A。三种方式都要求 `hostDialogs` 未关闭。
+
+```html
+<div id="GameContainer" style="width:100%;aspect-ratio:375/211"></div>
+<!-- 空元素即可：不要设置固定高度、min-height 或上下 padding，卡片收起后高度为 0 -->
+<div id="BetSlot" style="margin:0 12px 8px"></div>
+
+<script>
+const game = CocosGameWeb.open({
+  container: document.getElementById('GameContainer'),
+  betContainer: document.getElementById('BetSlot'),
+  gameUrl,
+  session,
+});
+
+game.setBetContainer(document.getElementById('AnotherSlot')); // 运行中换位置，正在显示的卡片立即移动
+game.setBetContainer(null);                                   // 回到游戏容器正下方
+</script>
+```
+
+- `betContainer` 必须是页面元素，传其他值会抛出异常。
+- SDK 会往该元素里追加卡片节点，Vue / React 中请用一个空元素，不要在里面渲染框架管理的子节点。
+- 想让卡片悬浮，给容器加 `position: fixed` 等样式即可，卡片跟随容器。
+- 卡片内容：在座玩家只显示筹码；观战点头像跟注时显示「观战下注」与金色「跟 昵称」标签，昵称过长时省略。
 
 ## 宿主自绘下注 / 记录 / 退出（0.2.0）
 

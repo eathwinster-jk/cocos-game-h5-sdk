@@ -26,6 +26,8 @@
     rulesTab: '游戏规则',
     recordsEmpty: '暂无记录',
     betArea: '下注区域',
+    betSpectate: '观战下注',
+    followPrefix: '跟 ',
     betChip: '请加注筹码',
     exitTitle: '退出游戏?',
     exitMessage: '当前游戏正在进行中，离开后游戏将结束并结算。',
@@ -99,10 +101,13 @@
 .cgw-layer button.cgw-footer.is-retry{color:#26bfba}
 .cgw-empty{padding:40px 0;text-align:center;font-size:14px;color:#999}
 .cgw-bet{margin:8px 14px 0;padding:12px 16px 16px;border-radius:20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
+.cgw-bet.is-hosted{margin:0}
 .cgw-bet-title{padding:6px 0;font-size:15px;color:#555}
 .cgw-bet-title.is-chip{font-size:14px;color:#888}
+.cgw-bet-title.is-spectate{display:flex;align-items:center;gap:8px;min-width:0}
+.cgw-follow-tag{flex:0 1 auto;min-width:0;padding:4px 10px;border-radius:11px;background:#c79953;color:#fff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cgw-bet-row{display:grid;grid-template-columns:repeat(var(--cgw-columns),minmax(0,1fr));gap:12px;padding:2px 6px}
-.cgw-bet button.cgw-choice{height:46px;padding:0 4px;border:0;border-radius:10px;background:#f5f6f8;color:#333;font-size:16px;white-space:nowrap;overflow:hidden}
+.cgw-bet button.cgw-choice{height:46px;padding:0 4px;border:0;border-radius:10px;background:#f5f6f8;color:#333;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cgw-bet button.cgw-choice.is-selected{background:#c79953;color:#fff}
 .cgw-confirm-layer{display:flex;align-items:center;justify-content:center}
 .cgw-confirm{position:relative;width:300px;max-width:calc(100% - 48px);border-radius:24px;background:#fff;overflow:hidden;opacity:0;transform:scale(.85);transition:transform .28s cubic-bezier(.34,1.56,.64,1),opacity .28s}
@@ -123,6 +128,14 @@
     if (!(options.container instanceof HTMLElement)) throw new Error('container 必须为页面元素');
     if (typeof options.gameUrl !== 'string' || !options.gameUrl) throw new Error('gameUrl 不能为空');
     if (!options.session || typeof options.session !== 'object') throw new Error('session 不能为空');
+    validateBetContainer(options.betContainer);
+  }
+
+  /**
+   * 校验加注卡片宿主容器：可不传，传入时必须为页面元素。
+   */
+  function validateBetContainer(element) {
+    if (element !== undefined && element !== null && !(element instanceof HTMLElement)) throw new Error('betContainer 必须为页面元素');
   }
 
   /**
@@ -288,15 +301,17 @@
   }
 
   /**
-   * 竖屏加注卡片：挂在游戏容器正下方，多注区时先选注区，点选筹码即提交并收起；倒计时结束自动收起。
+   * 竖屏加注卡片：宿主提供 betContainer 时放进该容器，否则挂在游戏容器正下方；
+   * 多注区时先选注区，点选筹码即提交并收起；倒计时结束自动收起。
    */
-  function createBetCard(container, onSelection) {
+  function createBetCard(container, getBetContainer, onSelection) {
     const card = createNode('div', 'cgw-bet');
     let roundId = '';
     let areas = [];
     let chipsCent = [];
     let selectedAreaIndex = 0;
     let isShowing = false;
+    let isSpectateBet = false;
     let timeoutId = 0;
 
     function createButtonRow(labels, isSelected, onTap) {
@@ -313,7 +328,11 @@
 
     function render() {
       card.textContent = '';
-      if (areas.length > 1) {
+      if (isSpectateBet && areas.length === 1) {
+        const header = createNode('div', 'cgw-bet-title is-spectate', HOST_DIALOG_TEXTS.betSpectate);
+        header.appendChild(createNode('span', 'cgw-follow-tag', HOST_DIALOG_TEXTS.followPrefix + readString(areas[0], 'areaName')));
+        card.appendChild(header);
+      } else if (areas.length > 1) {
         card.appendChild(createNode('div', 'cgw-bet-title', HOST_DIALOG_TEXTS.betArea));
         card.appendChild(createButtonRow(areas.map((area) => readString(area, 'areaName')), (index) => index === selectedAreaIndex, (index) => {
           selectedAreaIndex = index;
@@ -346,13 +365,34 @@
       areas = nextAreas;
       chipsCent = nextChips;
       selectedAreaIndex = 0;
+      isSpectateBet = options.reopen === true;
       isShowing = true;
       render();
       ensureDialogStyle();
-      if (!card.isConnected) container.insertAdjacentElement('afterend', card);
+      mount();
       global.clearTimeout(timeoutId);
       const seconds = Number(options.countdownSeconds);
       if (Number.isFinite(seconds) && seconds > 0) timeoutId = global.setTimeout(dismiss, seconds * 1000);
+    }
+
+    /**
+     * 把卡片放到当前位置：宿主容器内（去掉外边距）或游戏容器正下方。
+     */
+    function mount() {
+      const betContainer = getBetContainer();
+      card.classList.toggle('is-hosted', betContainer !== null);
+      if (betContainer) {
+        if (card.parentNode !== betContainer) betContainer.appendChild(card);
+      } else if (card.previousElementSibling !== container) {
+        container.insertAdjacentElement('afterend', card);
+      }
+    }
+
+    /**
+     * 宿主切换容器后，正在展示的卡片立即移到新位置。
+     */
+    function relocate() {
+      if (isShowing) mount();
     }
 
     function dismiss() {
@@ -361,7 +401,7 @@
       card.remove();
     }
 
-    return Object.freeze({ show, dismiss });
+    return Object.freeze({ show, dismiss, relocate });
   }
 
   /**
@@ -879,8 +919,15 @@
         if (isNewRound) invokeCallback('onBetOptions', context.onBetOptions, options);
         return;
       }
-      betCard = betCard || createBetCard(context.container, (areaCode, amountCent) => sendBetSelection(areaCode, amountCent, createClientBetNo()));
+      betCard = betCard || createBetCard(context.container, context.getBetContainer, (areaCode, amountCent) => sendBetSelection(areaCode, amountCent, createClientBetNo()));
       betCard.show(data);
+    }
+
+    /**
+     * 宿主切换加注卡片容器后同步卡片位置。
+     */
+    function relocateBetCard() {
+      betCard?.relocate();
     }
 
     function closeBetRound() {
@@ -979,12 +1026,12 @@
       betCoordinator.reset();
     }
 
-    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords, refreshRecords });
+    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords, refreshRecords, relocateBetCard });
   }
 
   /**
    * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords, refreshRecords,
-   * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, close }。
+   * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, setBetContainer, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
@@ -1008,6 +1055,8 @@
    *                        visible 为 false 时遮罩透明但仍拦截点击，避免误触牌桌
    *   onDialogChange(isVisible)       游戏内弹窗打开/全部关闭时回调
    *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏仍用游戏内弹窗
+   *   betContainer         可选，SDK 加注卡片放入的宿主页面元素（卡片撑满宽度、无外边距，收起时移出）；不传时挂在游戏容器正下方；
+   *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
    *   onExitRequest(decide)          改写宿主退出确认：传入后由宿主自行弹窗，调用 decide(true) 离开、decide(false) 取消
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)
@@ -1038,6 +1087,7 @@
     let showBackButton = options.showBackButton !== false;
     let showCollapseButton = options.showCollapseButton === true;
     let showGameToast = options.showGameToast !== false;
+    let betContainer = options.betContainer || null;
 
     function postToGame(type, data) {
       if (isClosed || !iframe.contentWindow) return;
@@ -1046,6 +1096,7 @@
 
     const hostDialogs = options.hostDialogs === false ? null : createHostDialogs({
       container: options.container,
+      getBetContainer: () => betContainer,
       dialogMask: options.dialogMask || null,
       onExitRequest: options.onExitRequest,
       onBetOptions: options.onBetOptions,
@@ -1154,6 +1205,15 @@
     function setCollapseButtonVisible(value) {
       showCollapseButton = Boolean(value);
       postUiOptions();
+    }
+
+    /**
+     * 切换 SDK 加注卡片所在的宿主容器，传 null 恢复游戏容器正下方；正在展示的卡片立即移动。
+     */
+    function setBetContainer(element) {
+      validateBetContainer(element);
+      betContainer = element || null;
+      hostDialogs?.relocateBetCard();
     }
 
     function requestFullscreen(value) {
@@ -1306,6 +1366,10 @@
        * 切换竖屏游戏内提示；关闭后竖屏提示只经 onEvent('game.toast') 交给宿主展示。
        */
       setGameToastVisible,
+      /**
+       * 切换 SDK 加注卡片所在的宿主容器（页面元素），传 null 恢复游戏容器正下方。
+       */
+      setBetContainer,
       close,
     });
   }
