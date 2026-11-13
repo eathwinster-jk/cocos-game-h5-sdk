@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.5/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.6/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -72,7 +72,7 @@ game.setCollapseButtonVisible(true);  // 随时隐藏/显示收起按钮
 
 | 方法 | 说明 |
 | --- | --- |
-| `exitGame()` | 在座时先离座再关闭，完成后回调 `onClose`；本局未结束不能离座时游戏内提示且不关闭 |
+| `exitGame()` | 在座时先离座再关闭，完成后回调 `onClose`；0.3.6 起能否离座由服务端判断，对局中会预约本局结束后离座，暂不可离座时游戏内提示且不关闭 |
 | `close()` | 不离座（保留座位）直接关闭，回调 `onClose` |
 
 `info` 字段：`tableId`、`roundId`、`stage`、`countdownSeconds`、`playMode`、`isPlaying`（是否在座）、`canLeave`（当前能否离座）、`isInGame`（在座且本局未结束）、`hasBet`、`isGuest`、`isMiniMode`、`isFullscreen`。
@@ -81,6 +81,48 @@ game.setCollapseButtonVisible(true);  // 随时隐藏/显示收起按钮
 - 全屏时返回按钮退回内嵌，不回调 `onBackClick`。
 - 未传 `onCollapseRequest` 时点击收起由 SDK 直接进入迷你模式，容器尺寸需宿主自行调整。
 - 与 Android `onBackClicked` / `exitGame` / `closeGame`、iOS `gameSDKDidClickBack:` / `exitGame` / `close` 一致。
+
+## 离座确认文案与宿主自绘按钮（0.3.6）
+
+离座确认文案改由服务端下发，`onExitRequest` 第二个参数为文案，宿主弹窗直接展示即可：
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  onExitRequest(decide, message) {  // message 为服务端离座确认文案，为空时 SDK 已回落为默认文案
+    decide(window.confirm(message));
+  },
+});
+```
+
+- 入座后「退出」按钮始终可点，能否离座由服务端判断：可离座时立即离座；对局中预约本局结束后离座，并提示服务端文案。
+- 未传 `onExitRequest` 时 SDK 自带的退出确认框同样展示服务端文案。
+
+PC 等宿主可以隐藏牌桌内按钮，改用自己的按钮调用游戏：
+
+```js
+const game = CocosGameWeb.open({
+  // ...
+  deviceMode: 'desktop',        // 'auto'（默认，按浏览器判断）/ 'mobile' / 'desktop'
+  showSoundButton: false,       // 隐藏声音按钮，改调 setMuted
+  showRulesButton: false,       // 隐藏记录与规则按钮，改调 openRules
+  showJoinButton: false,        // 隐藏「立即加入」与底注，改调 joinTable
+  showFullscreenButton: false,  // 隐藏大屏按钮，改调 setFullscreen
+  muted: false,                 // 初始是否静音，不传保持游戏默认（有声）
+  onMutedChange(isMuted) {      // 玩家在牌桌内切换静音时回调
+    syncMySoundButton(isMuted);
+  },
+});
+
+game.setMuted(true);            // 游戏未启动时先记录，启动后生效
+game.openRules();               // 打开记录与规则
+game.joinTable();               // 立即加入，入座结果经 onPlayingStateChange 回调
+game.setControlsVisible({ sound: true, rules: true }); // 批量切换：sound / rules / join / fullscreen / back / collapse
+```
+
+- `openRules` / `joinTable` 在游戏未启动或已关闭时返回 false。
+- `setControlsVisible` 只更新传入的布尔字段，参数不是对象时抛出异常。
+- `deviceMode: 'mobile'` 时竖屏内嵌由宿主页面展示下注等弹窗，全屏旋转为横屏；`'desktop'` 时弹窗在游戏内，全屏不旋转。
 
 ## 竖屏提示交给宿主（0.3.3）
 
@@ -157,7 +199,7 @@ const game = CocosGameWeb.open({
 手机竖屏内嵌时，下注卡片、记录与规则、退出确认由 SDK 在宿主页面上展示（与 Android / iOS SDK 一致），全屏仍用游戏内弹窗，默认开启：
 
 - `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
-- `onExitRequest(decide)`：改用宿主自己的退出确认框，调用 `decide(true)` 离开、`decide(false)` 取消。
+- `onExitRequest(decide, message)`：改用宿主自己的退出确认框，展示 `message`（0.3.6 起），调用 `decide(true)` 离开、`decide(false)` 取消。
 - 下注卡片默认插入在游戏容器正下方，请为其预留约 120~200px 空间；也可以放进宿主自己的容器，见下一节。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
 
@@ -218,8 +260,8 @@ const game = CocosGameWeb.open({
   onRecordsUpdated(records) {      // 记录数据刷新（切换页签、加载更多后）
     updateMyRecords(records);
   },
-  onExitRequest(decide) {          // 退出确认：decide(true) 离开，decide(false) 取消
-    decide(window.confirm('确定离开？'));
+  onExitRequest(decide, message) { // 退出确认：展示 message，decide(true) 离开，decide(false) 取消
+    decide(window.confirm(message));
   },
   onEvent(event, payload) {        // 钱包余额：wallet.balance_changed { balanceCent }
     if (event === 'wallet.balance_changed') updateMyBalance(payload.balanceCent);

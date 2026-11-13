@@ -273,8 +273,8 @@
   }
 
   // 宿主自绘退出确认示例
-  function confirmHostExit(decide) {
-    decide(window.confirm('当前游戏正在进行中，离开后游戏将结束并结算。确定离开？'));
+  function confirmHostExit(decide, message) {
+    decide(window.confirm(`${message}确定离开？`));
   }
 
   function createHostUiOptions() {

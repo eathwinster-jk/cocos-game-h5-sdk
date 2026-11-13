@@ -7,6 +7,17 @@
   const FULLSCREEN_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:#000;';
   const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:#000;';
   const MINI_DEFAULT_BACKGROUND = '#FFFFFF';
+  // 设备形态：auto 自动判断，mobile / desktop 由宿主强制（影响竖屏宿主弹窗与竖持旋转横屏）。
+  const DEVICE_MODES = Object.freeze(['auto', 'mobile', 'desktop']);
+  // setControlsVisible 的键与游戏按钮开关字段对应关系。
+  const CONTROL_SWITCH_KEYS = Object.freeze({
+    sound: 'showSoundButton',
+    rules: 'showRulesButton',
+    join: 'showJoinButton',
+    fullscreen: 'showFullscreenButton',
+    back: 'showBackButton',
+    collapse: 'showCollapseButton',
+  });
   // 宿主弹窗：手机竖屏内嵌时游戏把下注、记录与规则、退出确认交给宿主页面展示，样式与交互对齐原生 SDK。
   const DIALOG_STYLE_ID = 'cocos-game-web-dialog-style';
   const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -129,6 +140,9 @@
     if (typeof options.gameUrl !== 'string' || !options.gameUrl) throw new Error('gameUrl 不能为空');
     if (!options.session || typeof options.session !== 'object') throw new Error('session 不能为空');
     validateBetContainer(options.betContainer);
+    if (options.deviceMode !== undefined && !DEVICE_MODES.includes(options.deviceMode)) {
+      throw new Error(`deviceMode 必须为 ${DEVICE_MODES.join(' / ')}`);
+    }
   }
 
   /**
@@ -769,7 +783,7 @@
   /**
    * 退出确认框：离开 / 取消，点遮罩视为取消；关闭时只回传一次决定。
    */
-  function openExitConfirm(mask, onDecision) {
+  function openExitConfirm(mask, onDecision, message) {
     const card = createNode('div', 'cgw-confirm');
     const actions = createNode('div', 'cgw-confirm-actions');
     let isDecided = false;
@@ -787,7 +801,7 @@
     });
     card.append(
       createNode('div', 'cgw-confirm-title', HOST_DIALOG_TEXTS.exitTitle),
-      createNode('div', 'cgw-confirm-message', HOST_DIALOG_TEXTS.exitMessage),
+      createNode('div', 'cgw-confirm-message', message),
       actions,
     );
     const root = openLayer('cgw-confirm-layer', mask, () => decide(false), card);
@@ -971,7 +985,8 @@
       });
     }
 
-    function requestExit() {
+    function requestExit(data) {
+      const message = readString(data, 'message') || HOST_DIALOG_TEXTS.exitMessage;
       exitConfirm?.cancel();
       exitToken += 1;
       const token = exitToken;
@@ -982,10 +997,10 @@
         context.sendResult({ type: 'exitDecision', isConfirmed: Boolean(isConfirmed) });
       };
       if (typeof context.onExitRequest === 'function') {
-        invokeCallback('onExitRequest', context.onExitRequest, sendDecision);
+        invokeCallback('onExitRequest', context.onExitRequest, sendDecision, message);
         return;
       }
-      exitConfirm = openExitConfirm(context.dialogMask, sendDecision);
+      exitConfirm = openExitConfirm(context.dialogMask, sendDecision, message);
     }
 
     function handle(method, payload) {
@@ -1002,7 +1017,7 @@
         invokeCallback('onRecordsUpdated', context.onRecordsUpdated, data);
         if (rulesSheet?.isOpen()) rulesSheet.updateRecords(data);
       } else if (method === 'requestExitGame') {
-        requestExit();
+        requestExit(data);
       } else {
         console.warn('CocosGameWeb 忽略未知弹窗请求', method);
       }
@@ -1031,7 +1046,8 @@
 
   /**
    * 在容器内打开游戏，返回控制句柄 { sendEvent, setFullscreen, updateFullscreenState, setMiniMode, submitBet, queryRecords, loadMoreRecords, refreshRecords,
-   * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, setBetContainer, close }。
+   * exitGame, setBackButtonVisible, setCollapseButtonVisible, setGameToastVisible, setBetContainer,
+   * setControlsVisible, setMuted, openRules, joinTable, close }。
    * options：
    *   container            承载游戏的页面元素（建议宽高比 375:211）
    *   gameUrl              游戏页地址
@@ -1039,7 +1055,15 @@
    *                        游客：{ sceneType: 1, sceneId, deviceId?, tableId?, clientVersion?, deviceType? }，不传 deviceId 时自动生成并本地复用；
    *                        游客只能观战（直播间与群聊相同），入座、查看记录、进入全屏、点头像跟注时通过 onEvent('auth.login_required', { action: 'join' | 'records' | 'fullscreen' | 'bet' }) 通知宿主登录，下注阶段不弹窗
    *   showBackButton       是否显示牌桌返回按钮，默认 true；打开后可调用 setBackButtonVisible 切换
-   *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true
+   *   showFullscreenButton 是否显示牌桌大屏按钮，默认 true；宿主自绘全屏按钮时传 false 并调用 setFullscreen
+   *   showSoundButton      是否显示牌桌声音按钮，默认 true；宿主自绘时传 false 并调用 setMuted，配合 onMutedChange
+   *   showRulesButton      是否显示牌桌记录与规则按钮，默认 true；宿主自绘时传 false 并调用 openRules
+   *   showJoinButton       是否显示桌面「立即加入」与底注，默认 true；宿主自绘时传 false 并调用 joinTable，配合 onPlayingStateChange
+   *                        （以上按钮打开后可调用 setControlsVisible 批量切换）
+   *   muted                初始是否静音，不传保持游戏默认（有声）
+   *   onMutedChange(isMuted)         玩家在牌桌内点击声音按钮切换静音时回调，宿主据此同步自己的声音按钮
+   *   deviceMode           设备形态：'auto'（默认，按浏览器判断）/ 'mobile' / 'desktop'；
+   *                        mobile 时竖屏内嵌由本页面展示下注等弹窗、竖持全屏旋转为横屏，desktop 时弹窗在游戏内、全屏不旋转
    *   showCollapseButton   是否显示竖屏收起按钮（点击缩成迷你条），默认 false；打开后可调用 setCollapseButtonVisible 切换
    *   showGameToast        竖屏是否展示游戏内提示，默认 true；竖屏提示始终通过 onEvent('game.toast', { message, level }) 通知宿主，
    *                        level 为 'error' | 'info' | 'success'；传 false 后由宿主自行展示，全屏仍由游戏展示；打开后可调用 setGameToastVisible 切换
@@ -1054,10 +1078,10 @@
    *   dialogMask           弹窗遮罩：{ visible?: boolean, color?: '#RRGGBB', opacity?: 0~1 }，不传用游戏默认渐变；
    *                        visible 为 false 时遮罩透明但仍拦截点击，避免误触牌桌
    *   onDialogChange(isVisible)       游戏内弹窗打开/全部关闭时回调
-   *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏仍用游戏内弹窗
+   *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏与电脑（deviceMode 判定）仍用游戏内弹窗
    *   betContainer         可选，SDK 加注卡片放入的宿主页面元素（卡片撑满宽度、无外边距，收起时移出）；不传时挂在游戏容器正下方；
    *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
-   *   onExitRequest(decide)          改写宿主退出确认：传入后由宿主自行弹窗，调用 decide(true) 离开、decide(false) 取消
+   *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)
    *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
@@ -1084,10 +1108,17 @@
     let miniBackgroundColor;
     let bodyOverflow = '';
     let isGameStarted = false;
-    let showBackButton = options.showBackButton !== false;
-    let showCollapseButton = options.showCollapseButton === true;
-    let showGameToast = options.showGameToast !== false;
+    const uiSwitches = {
+      showBackButton: options.showBackButton !== false,
+      showFullscreenButton: options.showFullscreenButton !== false,
+      showCollapseButton: options.showCollapseButton === true,
+      showSoundButton: options.showSoundButton !== false,
+      showRulesButton: options.showRulesButton !== false,
+      showJoinButton: options.showJoinButton !== false,
+      showGameToast: options.showGameToast !== false,
+    };
     let betContainer = options.betContainer || null;
+    let isMuted = typeof options.muted === 'boolean' ? options.muted : null;
 
     function postToGame(type, data) {
       if (isClosed || !iframe.contentWindow) return;
@@ -1177,17 +1208,17 @@
     }
 
     /**
-     * 把最新返回/收起按钮显隐与竖屏游戏内提示开关发给游戏。
+     * 把最新牌桌按钮显隐与竖屏游戏内提示开关发给游戏。
      */
     function postUiOptions() {
-      postToGame('uiOptions', { ui: { showBackButton, showCollapseButton, showGameToast } });
+      postToGame('uiOptions', { ui: { ...uiSwitches } });
     }
 
     /**
      * 更新竖屏游戏内提示开关；关闭后竖屏提示只通过 game.toast 事件交给宿主。
      */
     function setGameToastVisible(value) {
-      showGameToast = Boolean(value);
+      uiSwitches.showGameToast = Boolean(value);
       postUiOptions();
     }
 
@@ -1195,7 +1226,7 @@
      * 更新返回按钮显隐。
      */
     function setBackButtonVisible(value) {
-      showBackButton = Boolean(value);
+      uiSwitches.showBackButton = Boolean(value);
       postUiOptions();
     }
 
@@ -1203,8 +1234,36 @@
      * 更新竖屏收起按钮显隐。
      */
     function setCollapseButtonVisible(value) {
-      showCollapseButton = Boolean(value);
+      uiSwitches.showCollapseButton = Boolean(value);
       postUiOptions();
+    }
+
+    /**
+     * 批量切换牌桌按钮显隐：{ sound, rules, join, fullscreen, back, collapse }，只更新传入的布尔字段。
+     */
+    function setControlsVisible(controls) {
+      if (!controls || typeof controls !== 'object') throw new Error('setControlsVisible 参数必须为对象');
+      Object.keys(CONTROL_SWITCH_KEYS).forEach((key) => {
+        if (typeof controls[key] === 'boolean') uiSwitches[CONTROL_SWITCH_KEYS[key]] = controls[key];
+      });
+      postUiOptions();
+    }
+
+    /**
+     * 宿主声音按钮：设置游戏静音，游戏未启动时先记录，启动后生效。
+     */
+    function setMuted(value) {
+      isMuted = Boolean(value);
+      if (isGameStarted) postToGame('setMuted', { isMuted });
+    }
+
+    /**
+     * 向游戏发送宿主按钮操作，游戏未启动或已关闭时返回 false。
+     */
+    function sendHostCommand(command) {
+      if (isClosed || !isGameStarted) return false;
+      postToGame('hostCommand', { command });
+      return true;
     }
 
     /**
@@ -1255,10 +1314,8 @@
         postToGame('session', {
           session: options.session,
           ui: {
-            showBackButton,
-            showFullscreenButton: options.showFullscreenButton !== false,
-            showCollapseButton,
-            showGameToast,
+            ...uiSwitches,
+            deviceMode: options.deviceMode || 'auto',
             dialogMask: options.dialogMask || null,
             hostDialogs: hostDialogs !== null,
             hostBack: true,
@@ -1267,7 +1324,11 @@
         if (isMiniMode) postMiniMode();
       } else if (data.type === 'started') {
         isGameStarted = true;
+        if (isMuted !== null) postToGame('setMuted', { isMuted });
         invokeCallback('onReady', options.onReady);
+      } else if (data.type === 'mutedChange') {
+        isMuted = Boolean(data.isMuted);
+        invokeCallback('onMutedChange', options.onMutedChange, isMuted);
       } else if (data.type === 'error') {
         invokeCallback('onError', options.onError, new Error(data.message || '游戏启动失败'));
       } else if (data.type === 'back') {
@@ -1370,6 +1431,27 @@
        * 切换 SDK 加注卡片所在的宿主容器（页面元素），传 null 恢复游戏容器正下方。
        */
       setBetContainer,
+      /**
+       * 批量切换牌桌按钮显隐：{ sound, rules, join, fullscreen, back, collapse }。
+       */
+      setControlsVisible,
+      /**
+       * 设置游戏静音（宿主自绘声音按钮）；玩家在牌桌内切换时回调 onMutedChange。
+       */
+      setMuted,
+      /**
+       * 打开记录与规则（宿主自绘规则按钮）；游客回调 onEvent('auth.login_required', { action: 'records' })。返回是否已发出。
+       */
+      openRules() {
+        return sendHostCommand('openRules');
+      },
+      /**
+       * 立即加入牌桌（宿主自绘进入牌桌按钮）：已在座忽略，游客回调登录事件，当前不可加入时游戏内提示；
+       * 入座成功回调 onPlayingStateChange(true)。返回是否已发出。
+       */
+      joinTable() {
+        return sendHostCommand('joinTable');
+      },
       close,
     });
   }
