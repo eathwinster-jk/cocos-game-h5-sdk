@@ -884,6 +884,7 @@
         isSuccess: data.isSuccess === true,
         balanceCent: Number.isSafeInteger(data.balanceCent) ? data.balanceCent : null,
         errorMessage: readString(data, 'errorMessage'),
+        availableBalanceCent: Number.isSafeInteger(data.availableBalanceCent) ? data.availableBalanceCent : null,
       });
       pendingBetNos.delete(result.clientBetNo);
       if (result.isSuccess) succeededBetNos.add(result.clientBetNo);
@@ -1083,8 +1084,12 @@
    *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
    *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
-   *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)
+   *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
+   *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent }，
+   *                                  余额不足失败时 errorMessage 末尾附「，可用积分 ¥x」，availableBalanceCent 为可用积分（分），其余情况为 null
    *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
+   *                                  records.current.items[] 除 title/detail/result/tone/type 文案外带 amounts 结构化金额（分）：
+   *                                  { amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }，未结算时 payoutCent/rakeCent/netCent 为 null；
    *                                  记录更新回调 onRecordsUpdated(records)，查询调用 queryRecords / loadMoreRecords
    *                                  （以上宿主回调仅在 hostDialogs 未关闭时生效，全屏时由游戏内弹窗展示）
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
