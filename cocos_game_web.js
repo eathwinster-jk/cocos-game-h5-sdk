@@ -1084,7 +1084,8 @@
    *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏与电脑（deviceMode 判定）仍用游戏内弹窗
    *   betContainer         可选，SDK 加注卡片放入的宿主页面元素（卡片撑满宽度、无外边距，收起时移出）；不传时挂在游戏容器正下方；
    *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
-   *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消
+   *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消；
+   *                                  电脑（deviceMode 判定）非全屏点牌桌「退出」同样回调，未传或全屏时用游戏内确认框；电脑端确认离座成功后关闭游戏并回调 onClose
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
    *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent, errorCode, serverMessage }，
@@ -1098,7 +1099,7 @@
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    *   onPlayingStateChange(isPlaying) 在座参与状态变化：入座为 true，点击退出确认离座成功后为 false
-   *   onClose()                      游戏已关闭并移出容器（exitGame 离座完成、会话失效或宿主调用 close）
+   *   onClose()                      游戏已关闭并移出容器（exitGame 离座完成、电脑端点退出离座完成、会话失效或宿主调用 close）
    */
   function open(options) {
     validateOptions(options);
@@ -1327,6 +1328,7 @@
             dialogMask: options.dialogMask || null,
             hostDialogs: hostDialogs !== null,
             hostBack: true,
+            hostExitRequest: hostDialogs !== null && typeof options.onExitRequest === 'function',
           },
         });
         if (isMiniMode) postMiniMode();
