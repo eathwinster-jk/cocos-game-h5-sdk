@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.8/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.9/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -251,8 +251,8 @@ const game = CocosGameWeb.open({
   onBetClosed(roundId) {           // 截止、进入全屏或关闭时收起该局面板
     hideMyBetPanel(roundId);
   },
-  onBetResult(result) {            // { roundId, clientBetNo, areaCode, amountCent, isSuccess, errorMessage, balanceCent, availableBalanceCent }
-    showMyBetResult(result);       // 余额不足失败时 errorMessage 末尾附「，可用积分 ¥x」，availableBalanceCent 为可用积分（分），其余为 null
+  onBetResult(result) {            // { roundId, clientBetNo, areaCode, amountCent, isSuccess, errorMessage, balanceCent, availableBalanceCent, errorCode, serverMessage }
+    showMyBetResult(result);       // errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足）；errorMessage 为游戏拼好的「余额不足，可用积分 ¥x」；availableBalanceCent 为服务端返回的可用积分（分）
   },
   onShowRecords(content) {         // 玩家点击记录：content 含 title、sections 与 records
     showMyRecords(content);        // records.current.items[].amounts：{ amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }（分，未结算为 null）

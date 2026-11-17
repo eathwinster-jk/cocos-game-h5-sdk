@@ -885,6 +885,8 @@
         balanceCent: Number.isSafeInteger(data.balanceCent) ? data.balanceCent : null,
         errorMessage: readString(data, 'errorMessage'),
         availableBalanceCent: Number.isSafeInteger(data.availableBalanceCent) ? data.availableBalanceCent : null,
+        errorCode: Number.isSafeInteger(data.errorCode) ? data.errorCode : null,
+        serverMessage: readString(data, 'serverMessage'),
       });
       pendingBetNos.delete(result.clientBetNo);
       if (result.isSuccess) succeededBetNos.add(result.clientBetNo);
@@ -1085,8 +1087,9 @@
    *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
-   *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent }，
-   *                                  余额不足失败时 errorMessage 末尾附「，可用积分 ¥x」，availableBalanceCent 为可用积分（分），其余情况为 null
+   *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent, errorCode, serverMessage }，
+   *                                  errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足，本地校验失败时为 null / ''），errorMessage 为游戏拼好的提示；
+   *                                  余额不足时 errorMessage 为「余额不足，可用积分 ¥x」，availableBalanceCent 为服务端返回的可用积分（分），其余情况为 null
    *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
    *                                  records.current.items[] 除 title/detail/result/tone/type 文案外带 amounts 结构化金额（分）：
    *                                  { amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }，未结算时 payoutCent/rakeCent/netCent 为 null；
