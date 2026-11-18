@@ -1090,7 +1090,7 @@
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
    *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent, errorCode, serverMessage }，
    *                                  errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足，本地校验失败时为 null / ''），errorMessage 为游戏拼好的提示；
-   *                                  余额不足时 errorMessage 为「余额不足，可用积分 ¥x」，availableBalanceCent 为服务端返回的可用积分（分），其余情况为 null
+   *                                  余额不足时 errorMessage 为「余额不足，可用余额 ¥x」，availableBalanceCent 为服务端返回的可用余额（分），其余情况为 null
    *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
    *                                  records.current.items[] 除 title/detail/result/tone/type 文案外带 amounts 结构化金额（分）：
    *                                  { amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }，未结算时 payoutCent/rakeCent/netCent 为 null；
@@ -1332,6 +1332,7 @@
           },
         });
         if (isMiniMode) postMiniMode();
+        if (isFullscreen) postToGame('fullscreenChanged', { isFullscreen });
       } else if (data.type === 'started') {
         isGameStarted = true;
         if (isMuted !== null) postToGame('setMuted', { isMuted });
