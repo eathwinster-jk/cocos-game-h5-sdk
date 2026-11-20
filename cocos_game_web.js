@@ -86,14 +86,14 @@
 .cgw-layer button.cgw-chip{padding:6px 12px;border:0;border-radius:14px;background:#f5f6f8;color:#666;font-size:13px}
 .cgw-layer button.cgw-chip.is-selected{background:#e6f8f7;color:#26bfba;font-weight:700}
 .cgw-stats{display:flex;gap:8px;margin-top:12px}
-.cgw-stat{flex:1;min-width:0;padding:10px 6px 10px 10px;border-radius:8px;background:#f7f8fa}
+.cgw-stat{flex:1;min-width:0;padding:10px 6px;border-radius:8px;background:#f7f8fa;text-align:center}
 .cgw-stat-value{font-size:18px;font-weight:700;color:#222}
 .cgw-stat-label{margin-top:6px;font-size:12px;color:#999}
-.cgw-item{display:flex;align-items:center;gap:10px;padding:12px 0}
+.cgw-item{padding:12px 0}
 .cgw-item+.cgw-item{border-top:1px solid #eee}
-.cgw-item-texts{flex:1;min-width:0}
-.cgw-item-title{font-size:14px;font-weight:700;color:#222}
-.cgw-item-detail{margin-top:5px;font-size:12px;color:#999}
+.cgw-item-header{display:flex;align-items:baseline;gap:10px}
+.cgw-item-title{flex:1;min-width:0;font-size:14px;font-weight:700;color:#222}
+.cgw-item-detail{margin-top:5px;font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cgw-item-result{font-size:14px;font-weight:700;white-space:nowrap;color:#222}
 .cgw-controls{display:flex;gap:10px;height:36px;margin-top:12px}
 .cgw-controls+.cgw-controls{margin-top:10px}
@@ -517,11 +517,11 @@
     function appendItems(parent, items) {
       items.forEach((item) => {
         const row = createNode('div', 'cgw-item');
-        const texts = createNode('div', 'cgw-item-texts');
-        texts.append(createNode('div', 'cgw-item-title', readString(item, 'title')), createNode('div', 'cgw-item-detail', readString(item, 'detail')));
+        const header = createNode('div', 'cgw-item-header');
         const result = createNode('div', 'cgw-item-result', readString(item, 'result'));
         result.style.color = resolveToneColor(readString(item, 'tone'));
-        row.append(texts, result);
+        header.append(createNode('div', 'cgw-item-title', readString(item, 'title')), result);
+        row.append(header, createNode('div', 'cgw-item-detail', readString(item, 'detail')));
         parent.appendChild(row);
       });
     }
