@@ -5,7 +5,7 @@
   const HOST_MESSAGE_SOURCE = 'cocos-game-host';
   const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
   const FULLSCREEN_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:#000;';
-  const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:#000;';
+  const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:transparent;';
   const MINI_DEFAULT_BACKGROUND = '#FFFFFF';
   // 设备形态：auto 自动判断，mobile / desktop 由宿主强制（影响竖屏宿主弹窗与竖持旋转横屏）。
   const DEVICE_MODES = Object.freeze(['auto', 'mobile', 'desktop']);
@@ -1185,7 +1185,7 @@
       miniBackgroundColor = backgroundColor;
       if (isMiniMode) setFullscreen(false);
       // 容器高度常为小数，画布取整后露出的边缘用宿主底色填充，避免透出黑线
-      iframe.style.background = isMiniMode ? miniBackgroundColor || MINI_DEFAULT_BACKGROUND : '#000';
+      iframe.style.background = isMiniMode ? miniBackgroundColor || MINI_DEFAULT_BACKGROUND : 'transparent';
       postMiniMode();
     }
 
