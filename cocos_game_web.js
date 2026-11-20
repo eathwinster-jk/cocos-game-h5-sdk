@@ -1075,7 +1075,8 @@
    *                                  info { tableId, roundId, stage, countdownSeconds, playMode, isPlaying, canLeave, isInGame, hasBet, isGuest, isMiniMode, isFullscreen }，
    *                                  isInGame 为 true 时在座且本局未结束不能离座，宿主可提示稍后再试；全屏时返回按钮退回内嵌，不回调
    *   onBack()                       已废弃：牌桌返回改为 onBackClick
-   *   onCollapseRequest()            玩家点击竖屏收起按钮：宿主把容器调整为 362:50 横条后调用 setMiniMode(true)；未传时直接进入迷你模式
+   *   onCollapseRequest()            玩家点击竖屏收起按钮：宿主把容器调整为 362:50 横条后调用 setMiniMode(true)；未传时直接进入迷你模式。
+   *                                  迷你条按 362:50 等比缩放，比例不一致时两侧留白；电脑端推荐 362×50、434×60 或 543×75（px）
    *   onFullscreenRequest(isFullscreen) 改写大屏按钮：传入后由宿主处理，默认撑满 iframe
    *   dialogScope          弹窗范围：'game'（默认，只在游戏区域内）或 'fullscreen'（弹窗时临时全屏，关闭后还原）
    *   dialogMask           弹窗遮罩：{ visible?: boolean, color?: '#RRGGBB', opacity?: 0~1 }，不传用游戏默认渐变；
@@ -1088,6 +1089,7 @@
    *                                  电脑（deviceMode 判定）非全屏点牌桌「退出」同样回调，未传或全屏时用游戏内确认框；电脑端确认离座成功后关闭游戏并回调 onClose
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
+   *                                  电脑端迷你条状态下也会回调（展开后先回调 onBetClosed，再改用游戏内下注框）；
    *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent, errorCode, serverMessage }，
    *                                  errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足，本地校验失败时为 null / ''），errorMessage 为游戏拼好的提示；
    *                                  余额不足时 errorMessage 为「余额不足，可用余额 ¥x」，availableBalanceCent 为服务端返回的可用余额（分），其余情况为 null
@@ -1329,6 +1331,7 @@
             hostDialogs: hostDialogs !== null,
             hostBack: true,
             hostExitRequest: hostDialogs !== null && typeof options.onExitRequest === 'function',
+            hostBetOptions: hostDialogs !== null && typeof options.onBetOptions === 'function',
           },
         });
         if (isMiniMode) postMiniMode();
