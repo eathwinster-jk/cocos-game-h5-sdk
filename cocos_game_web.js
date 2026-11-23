@@ -6,6 +6,18 @@
   const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
   const FULLSCREEN_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:#000;';
   const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:transparent;';
+  // 游戏经 message 发给 SDK 的消息类型与 SDK 能力，随会话下发给游戏，与原生 SDK 一致。
+  const MESSAGE_DIALOG_PAGE_REGISTER = 'dialogPage.register';
+  const CAPABILITIES = Object.freeze({
+    protocolVersion: 1,
+    messages: Object.freeze([MESSAGE_DIALOG_PAGE_REGISTER]),
+    features: Object.freeze(['webDialogPage']),
+  });
+  // 网页弹窗：铺满视口最上层的透明 iframe，与弹窗页面之间的消息来源标记
+  const WEB_DIALOG_FRAME_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:transparent;color-scheme:normal;display:none;';
+  const WEB_DIALOG_PAGE_SOURCE = 'cocos-dialog-page';
+  const WEB_DIALOG_HOST_SOURCE = 'cocos-dialog-host';
+  const WEB_DIALOG_CLOSE_TIMEOUT_MS = 600;
   const MINI_DEFAULT_BACKGROUND = '#FFFFFF';
   // 设备形态：auto 自动判断，mobile / desktop 由宿主强制（影响竖屏宿主弹窗与竖持旋转横屏）。
   const DEVICE_MODES = Object.freeze(['auto', 'mobile', 'desktop']);
@@ -903,6 +915,163 @@
   }
 
   /**
+   * 网页弹窗：游戏注册弹窗页面后，在视口最上层用透明沙箱 iframe（srcdoc）展示记录与规则、退出确认，游戏 iframe 不动。
+   * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / closed，SDK → 页面为 open / updateRecords / dismiss。
+   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed) }。
+   */
+  function createWebDialogFrame(handlers) {
+    let frame = null;
+    let pageHtml = '';
+    let pageVersion = '';
+    let isPageReady = false;
+    let isShowing = false;
+    let openSerial = 0;
+    let pendingMessage = null;
+
+    /**
+     * 保存游戏注册的页面并预加载；同版本重复注册忽略。
+     */
+    function register(payload) {
+      const html = readString(payload, 'html');
+      const version = readString(payload, 'version');
+      if (!html) {
+        console.warn('CocosGameWeb 弹窗页面为空，忽略注册');
+        return;
+      }
+      if (pageHtml && version && version === pageVersion) return;
+      destroyFrame();
+      pageHtml = html;
+      pageVersion = version;
+      ensureFrame();
+    }
+
+    /**
+     * 创建隐藏的透明 iframe 并加载页面；color-scheme 固定为 normal，避免宿主深色模式下 iframe 变为不透明。
+     */
+    function ensureFrame() {
+      if (frame || !pageHtml) return;
+      frame = document.createElement('iframe');
+      frame.title = '游戏弹窗';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.setAttribute('allowtransparency', 'true');
+      frame.style.cssText = WEB_DIALOG_FRAME_STYLE;
+      frame.srcdoc = pageHtml;
+      document.body.appendChild(frame);
+    }
+
+    /**
+     * 移除 iframe，保留已注册页面以便下次重建。
+     */
+    function destroyFrame() {
+      if (isShowing) setPageScrollLocked(false);
+      frame?.remove();
+      frame = null;
+      isPageReady = false;
+      isShowing = false;
+      pendingMessage = null;
+    }
+
+    /**
+     * 发送消息给页面；沙箱 iframe 的来源为 null，只能以 * 发送，接收方固定为本 iframe。
+     */
+    function sendToPage(type, payload) {
+      frame?.contentWindow?.postMessage({ source: WEB_DIALOG_HOST_SOURCE, type, payload }, '*');
+    }
+
+    /**
+     * 显示 iframe 并打开弹窗；页面未就绪时暂存，就绪后补发。
+     */
+    function open(dialog, content, mask) {
+      ensureFrame();
+      if (!frame) return;
+      const message = { type: 'open', payload: { dialog, content, mask: mask || true } };
+      if (!isShowing) setPageScrollLocked(true);
+      isShowing = true;
+      openSerial += 1;
+      frame.style.display = 'block';
+      if (isPageReady) sendToPage(message.type, message.payload);
+      else pendingMessage = message;
+    }
+
+    /**
+     * 隐藏 iframe，页面保留以便下次直接打开。
+     */
+    function hide() {
+      if (!isShowing) return;
+      isShowing = false;
+      setPageScrollLocked(false);
+      if (frame) frame.style.display = 'none';
+    }
+
+    /**
+     * 页面关闭动画结束应回传 closed；超时仍在展示且未重新打开时强制隐藏，避免透明层挡住页面。
+     */
+    function scheduleHideTimeout() {
+      const serial = openSerial;
+      global.setTimeout(() => {
+        if (isShowing && serial === openSerial) hide();
+      }, WEB_DIALOG_CLOSE_TIMEOUT_MS);
+    }
+
+    /**
+     * 处理页面消息，非本 iframe 或非页面来源的消息忽略。
+     */
+    function handlePageMessage(event) {
+      const data = event.data;
+      if (!frame || event.source !== frame.contentWindow || !data || data.source !== WEB_DIALOG_PAGE_SOURCE) return;
+      const payload = data.payload && typeof data.payload === 'object' ? data.payload : {};
+      if (data.type === 'ready') {
+        isPageReady = true;
+        const message = pendingMessage;
+        pendingMessage = null;
+        if (message && isShowing) sendToPage(message.type, message.payload);
+      } else if (data.type === 'closed') {
+        hide();
+      } else if (data.type === 'recordsQuery') {
+        handlers.onRecordsQuery(payload);
+      } else if (data.type === 'exitDecision') {
+        scheduleHideTimeout();
+        handlers.onExitDecision(Boolean(payload.isConfirmed));
+      } else {
+        console.warn('CocosGameWeb 忽略未知弹窗页面消息', data.type);
+      }
+    }
+
+    /**
+     * 立即关闭弹窗（进入全屏或关闭游戏时），未决的退出确认由页面按取消回传。
+     */
+    function dismiss() {
+      pendingMessage = null;
+      if (!isShowing) return;
+      sendToPage('dismiss', {});
+      hide();
+    }
+
+    /**
+     * 关闭游戏：移除 iframe 与消息监听并清除已注册页面。
+     */
+    function release() {
+      destroyFrame();
+      pageHtml = '';
+      pageVersion = '';
+      global.removeEventListener('message', handlePageMessage);
+    }
+
+    global.addEventListener('message', handlePageMessage);
+    return Object.freeze({
+      register,
+      isAvailable: () => Boolean(pageHtml),
+      openRules: (content, mask) => open('rules', content, mask),
+      openConfirm: (content, mask) => open('confirm', content, mask),
+      updateRecords: (records) => {
+        if (isShowing && isPageReady) sendToPage('updateRecords', records);
+      },
+      dismiss,
+      release,
+    });
+  }
+
+  /**
    * 宿主弹窗控制器：处理游戏的弹窗请求，操作结果经 sendResult 回传游戏。
    * 宿主传入 onBetOptions 即接管竖屏下注、传入 onShowRecords 即接管竖屏记录与规则、传入 onExitRequest 即接管退出确认；
    * 未传时由 SDK 在宿主页面展示自带界面。
@@ -912,9 +1081,20 @@
     let rulesSheet = null;
     let exitConfirm = null;
     let exitToken = 0;
+    // 网页确认框当前待回传的退出决定
+    let webExitDecision = null;
     const betCoordinator = createBetCoordinator();
     const isHostHandlingBet = typeof context.onBetOptions === 'function';
     const isHostHandlingRecords = typeof context.onShowRecords === 'function';
+    const webDialog = createWebDialogFrame({
+      onRecordsQuery: (query) => sendRecordsQuery(readString(query, 'action') || 'query', {
+        isHistory: Boolean(query.isHistory),
+        filterKey: readString(query, 'filterKey') || RECORD_FILTER_ALL,
+        periodIndex: Math.max(0, Math.floor(Number(query.periodIndex) || 0)),
+        keyword: readString(query, 'keyword'),
+      }),
+      onExitDecision: (isConfirmed) => webExitDecision?.(isConfirmed),
+    });
 
     function sendRecordsQuery(action, query) {
       context.sendResult({ type: 'recordsQuery', action, ...query, keyword: query.keyword || '' });
@@ -982,6 +1162,11 @@
         return;
       }
       rulesSheet?.close(false);
+      rulesSheet = null;
+      if (webDialog.isAvailable()) {
+        webDialog.openRules(content, context.dialogMask);
+        return;
+      }
       rulesSheet = openRulesSheet(content, context.dialogMask, {
         onQuery: (query) => sendRecordsQuery('query', query),
         onLoadMore: (isHistory) => sendRecordsQuery('loadMore', { isHistory, filterKey: RECORD_FILTER_ALL, periodIndex: 0, keyword: '' }),
@@ -997,10 +1182,21 @@
         if (token !== exitToken) return;
         exitToken += 1;
         exitConfirm = null;
+        webExitDecision = null;
         context.sendResult({ type: 'exitDecision', isConfirmed: Boolean(isConfirmed) });
       };
       if (typeof context.onExitRequest === 'function') {
         invokeCallback('onExitRequest', context.onExitRequest, sendDecision, message);
+        return;
+      }
+      if (webDialog.isAvailable()) {
+        webExitDecision = sendDecision;
+        webDialog.openConfirm({
+          title: HOST_DIALOG_TEXTS.exitTitle,
+          message,
+          confirmText: HOST_DIALOG_TEXTS.exitLeave,
+          cancelText: HOST_DIALOG_TEXTS.cancel,
+        }, context.dialogMask);
         return;
       }
       exitConfirm = openExitConfirm(context.dialogMask, sendDecision, message);
@@ -1019,6 +1215,7 @@
       } else if (method === 'updateRecords') {
         invokeCallback('onRecordsUpdated', context.onRecordsUpdated, data);
         if (rulesSheet?.isOpen()) rulesSheet.updateRecords(data);
+        webDialog.updateRecords(data);
       } else if (method === 'requestExitGame') {
         requestExit(data);
       } else {
@@ -1034,6 +1231,7 @@
       rulesSheet?.close(false);
       rulesSheet = null;
       exitConfirm?.cancel();
+      webDialog.dismiss();
     }
 
     /**
@@ -1042,9 +1240,20 @@
     function reset() {
       dismissAll();
       betCoordinator.reset();
+      webDialog.release();
     }
 
-    return Object.freeze({ handle, dismissAll, reset, submitBet, queryRecords, loadMoreRecords, refreshRecords, relocateBetCard });
+    return Object.freeze({
+      handle,
+      dismissAll,
+      reset,
+      submitBet,
+      queryRecords,
+      loadMoreRecords,
+      refreshRecords,
+      relocateBetCard,
+      registerDialogPage: webDialog.register,
+    });
   }
 
   /**
@@ -1086,7 +1295,7 @@
    *   betContainer         可选，SDK 加注卡片放入的宿主页面元素（卡片撑满宽度、无外边距，收起时移出）；不传时挂在游戏容器正下方；
    *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
    *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消；
-   *                                  电脑（deviceMode 判定）非全屏点牌桌「退出」同样回调，未传或全屏时用游戏内确认框；电脑端确认离座成功后关闭游戏并回调 onClose
+   *                                  电脑（deviceMode 判定）非全屏点牌桌「退出」同样回调，未传或全屏时用游戏内确认框；确认后离座转为观战，不关闭游戏
    *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
    *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
    *                                  电脑端迷你条状态下也会回调（展开后先回调 onBetClosed，再改用游戏内下注框）；
@@ -1101,7 +1310,7 @@
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    *   onPlayingStateChange(isPlaying) 在座参与状态变化：入座为 true，点击退出确认离座成功后为 false
-   *   onClose()                      游戏已关闭并移出容器（exitGame 离座完成、电脑端点退出离座完成、会话失效或宿主调用 close）
+   *   onClose()                      游戏已关闭并移出容器（exitGame 离座完成、会话失效或宿主调用 close）
    */
   function open(options) {
     validateOptions(options);
@@ -1161,6 +1370,14 @@
       }
       iframe.style.cssText = isFullscreen ? FULLSCREEN_STYLE : EMBEDDED_STYLE;
       notifyFullscreenState();
+    }
+
+    /**
+     * 分发游戏经 message 发来的消息，未知类型记录后忽略（新游戏可能运行在旧 SDK 上）。
+     */
+    function handleGameMessage(name, payload) {
+      if (name === MESSAGE_DIALOG_PAGE_REGISTER) hostDialogs?.registerDialogPage(payload);
+      else console.warn('忽略未知游戏消息', { name, payload });
     }
 
     function notifyFullscreenState() {
@@ -1333,6 +1550,7 @@
             hostExitRequest: hostDialogs !== null && typeof options.onExitRequest === 'function',
             hostBetOptions: hostDialogs !== null && typeof options.onBetOptions === 'function',
           },
+          capabilities: CAPABILITIES,
         });
         if (isMiniMode) postMiniMode();
         if (isFullscreen) postToGame('fullscreenChanged', { isFullscreen });
@@ -1370,6 +1588,8 @@
         handleDialogChange(Boolean(data.isVisible));
       } else if (data.type === 'hostDialog') {
         hostDialogs?.handle(String(data.method), data.payload);
+      } else if (data.type === 'message') {
+        handleGameMessage(String(data.name), data.payload);
       }
     }
 

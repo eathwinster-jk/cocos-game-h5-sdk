@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.3.14/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.0/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -202,6 +202,7 @@ const game = CocosGameWeb.open({
 - `onExitRequest(decide, message)`：改用宿主自己的退出确认框，展示 `message`（0.3.6 起），调用 `decide(true)` 离开、`decide(false)` 取消。
 - 下注卡片默认插入在游戏容器正下方，请为其预留约 120~200px 空间；也可以放进宿主自己的容器，见下一节。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
+- 0.4.0 起记录与规则、退出确认优先展示游戏热更新下发的自绘弹窗（宿主页面上的透明 iframe），游戏未下发时仍用 SDK 自带弹窗；`onExitRequest` 等宿主回调优先级不变，接口无变化。
 
 ## 竖屏下注弹窗：三种接入方式（0.3.5）
 
