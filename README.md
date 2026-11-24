@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.1/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.2/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -200,69 +200,27 @@ const game = CocosGameWeb.open({
 
 - `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
 - `onExitRequest(decide, message)`：改用宿主自己的退出确认框，展示 `message`（0.3.6 起），调用 `decide(true)` 离开、`decide(false)` 取消。
-- 0.4.1 起竖屏下注默认展示游戏热更新下发的底部下注抽屉，浮在页面最上层，不改动宿主布局；旧版本游戏模块仍使用加注卡片（默认插入在游戏容器正下方，请预留约 120~200px 空间，也可以放进宿主自己的容器，见下一节）。
+- 0.4.1 起竖屏下注展示游戏热更新下发的底部下注抽屉，浮在页面最上层，不改动宿主布局；0.4.2 起下注与记录统一由热更新自绘弹窗展示，见下一节。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
 - 0.4.0 起记录与规则、退出确认优先展示游戏热更新下发的自绘弹窗（宿主页面上的透明 iframe），游戏未下发时仍用 SDK 自带弹窗；`onExitRequest` 等宿主回调优先级不变，接口无变化。
 
-## 竖屏下注弹窗：三种接入方式（0.3.5）
+## 竖屏下注与记录（0.4.2）
 
-竖屏下注界面可以直接用 SDK 提供的加注卡片，也可以宿主自绘；用 SDK 卡片时还能指定放在哪个容器里。全屏时统一用游戏内弹窗。
+手机竖屏内嵌时，下注、记录与规则统一由游戏随热更新下发的自绘弹窗展示（底部下注抽屉、记录与规则面板），浮在页面最上层、不改动宿主布局；筹码额度取自游戏后台的牌桌配置，样式与位置随游戏热更新调整，宿主无需任何代码。全屏时统一用游戏内弹窗。
 
-> 0.4.1 起（需新游戏模块）：未传 `onBetOptions` 时，竖屏下注改为游戏随热更新下发的底部下注抽屉（白色、无遮罩，打开时拦截宿主页面触摸，点抽屉外透明区域可提前关闭，下注成功或倒计时结束自动关闭），筹码额度取自游戏后台的牌桌配置；抽屉样式与位置随游戏热更新调整，无需更新脚本。方式 A 的加注卡片与方式 B 的 `betContainer` 仅在旧版本游戏模块上生效，方式 C 不受影响。
+- 下注抽屉：白色、无遮罩，打开时拦截宿主页面触摸，点抽屉外透明区域可提前关闭，下注成功或倒计时结束自动关闭。
+- 弹窗页面还在加载时到来的下注先暂存，加载完成后立即弹出；记录与规则、退出确认打开时到来的下注，关闭后补弹；本局截止前未弹出则不再弹。
+- 旧版本游戏模块未下发弹窗页面时，才使用 SDK 自带的加注卡片（默认在游戏容器正下方，可用 `betContainer` / `setBetContainer` 放进宿主容器）。
 
-| 方式 | 宿主要做的 | 界面 | 位置 |
-| --- | --- | --- | --- |
-| A. SDK 默认位置 | 什么都不用做 | SDK 加注卡片 | 游戏容器正下方 |
-| B. 放入宿主容器 | 传 `betContainer` 或调用 `setBetContainer` | SDK 加注卡片 | 宿主容器内，撑满宽度、无外边距 |
-| C. 宿主自绘 | 传 `onBetOptions` 等回调，调用 `submitBet` | 宿主界面 | 宿主决定 |
+> 0.4.2 起以下宿主自绘接口已废弃：`onBetOptions`、`onBetClosed`、`onBetResult`、`onShowRecords`、`onRecordsUpdated` 传入也不再回调；`submitBet`、`queryRecords`、`loadMoreRecords`、`refreshRecords` 宿主无需调用。已接入的代码不会报错，升级后可删除。
 
-优先级：传了 `onBetOptions` 时 `betContainer` 不生效；否则有 `betContainer` 用方式 B，没有用方式 A。三种方式都要求 `hostDialogs` 未关闭。
+## 宿主自绘退出确认（0.2.0）
 
-```html
-<div id="GameContainer" style="width:100%;aspect-ratio:375/211"></div>
-<!-- 空元素即可：不要设置固定高度、min-height 或上下 padding，卡片收起后高度为 0 -->
-<div id="BetSlot" style="margin:0 12px 8px"></div>
-
-<script>
-const game = CocosGameWeb.open({
-  container: document.getElementById('GameContainer'),
-  betContainer: document.getElementById('BetSlot'),
-  gameUrl,
-  session,
-});
-
-game.setBetContainer(document.getElementById('AnotherSlot')); // 运行中换位置，正在显示的卡片立即移动
-game.setBetContainer(null);                                   // 回到游戏容器正下方
-</script>
-```
-
-- `betContainer` 必须是页面元素，传其他值会抛出异常。
-- SDK 会往该元素里追加卡片节点，Vue / React 中请用一个空元素，不要在里面渲染框架管理的子节点。
-- 想让卡片悬浮，给容器加 `position: fixed` 等样式即可，卡片跟随容器。
-- 卡片内容：在座玩家只显示筹码；观战点头像跟注时显示「观战下注」与金色「跟 昵称」标签，昵称过长时省略。
-
-## 宿主自绘下注 / 记录 / 退出（0.2.0）
-
-手机竖屏内嵌时，宿主可以用自己的界面接管下注、记录与规则、退出确认（与 Android / iOS SDK 0.2.0 一致）：传入对应回调即接管，未传时仍由 SDK 展示自带界面；全屏时始终使用游戏内弹窗。
+传入 `onExitRequest` 即由宿主展示离座确认，全屏时仍使用游戏内弹窗：
 
 ```js
 const game = CocosGameWeb.open({
   // ...
-  onBetOptions(options) {          // 新一局可下注：{ roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }
-    showMyBetPanel(options);
-  },
-  onBetClosed(roundId) {           // 截止、进入全屏或关闭时收起该局面板
-    hideMyBetPanel(roundId);
-  },
-  onBetResult(result) {            // { roundId, clientBetNo, areaCode, amountCent, isSuccess, errorMessage, balanceCent, availableBalanceCent, errorCode, serverMessage }
-    showMyBetResult(result);       // errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足）；errorMessage 为游戏拼好的「余额不足，可用积分 ¥x」；availableBalanceCent 为服务端返回的可用积分（分）
-  },
-  onShowRecords(content) {         // 玩家点击记录：content 含 title、sections 与 records
-    showMyRecords(content);        // records.current.items[].amounts：{ amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }（分，未结算为 null）
-  },
-  onRecordsUpdated(records) {      // 记录数据刷新（切换页签、加载更多后）
-    updateMyRecords(records);
-  },
   onExitRequest(decide, message) { // 退出确认：展示 message，decide(true) 离开，decide(false) 取消
     decide(window.confirm(message));
   },
@@ -270,24 +228,7 @@ const game = CocosGameWeb.open({
     if (event === 'wallet.balance_changed') updateMyBalance(payload.balanceCent);
   },
 });
-
-// 玩家选好注区与筹码后提交，返回 false 表示本局已截止、参数无效或重复提交
-game.submitBet({
-  roundId: options.roundId,
-  areaCode: options.areas[0].areaCode,
-  amountCent: 100,
-  clientBetNo: CocosGameWeb.createClientBetNo(),
-});
-
-// 记录查询 { isHistory, filterKey, periodIndex, keyword } 与加载更多，结果通过 onRecordsUpdated 返回
-game.queryRecords({ isHistory: true });
-game.loadMoreRecords(true);
 ```
-
-- 同一局通常只回调一次 `onBetOptions`；从全屏回到竖屏时会以剩余倒计时重新回调。
-- 0.3.2 起观战时点在桌用户头像「跟注」，同一局内会再次回调 `onBetOptions`，`areas` 只含被跟注的座位，请按新的 `areas` 刷新面板。
-- `clientBetNo` 最长 64 位，用于幂等：失败可用同一单号重试，成功后重复提交会被拒绝。
-- 金额单位均为分。
 
 ## 迷你条（0.1.12）
 
@@ -310,28 +251,23 @@ game.setMiniMode(true, '#F4F5F8');
 - 先调整容器尺寸再调用 `setMiniMode`；圆角由游戏绘制，圆角外填充 `backgroundColor`（`#RRGGBB`，缺省白色）。
 - 迷你模式下不可进入全屏，处于全屏时进入迷你条会先退出全屏。
 - 迷你条退出按钮与牌桌返回按钮一致，回调 `onBackClick`（`info.isMiniMode` 为 true）；未传 `onExpandRequest` 时点击展开由 SDK 直接调用 `setMiniMode(false)`，容器尺寸需宿主自行恢复。
-- 迷你条期间不弹下注（不回调 `onBetOptions`），声音暂停；展开后恢复声音，本局未下注会重新推送。
+- 迷你条期间不弹下注，声音暂停；展开后恢复声音，本局未下注会重新推送。
 
-## 预加载与刷新记录（0.3.4）
+## 预加载（0.3.4）
 
 进入群 / 直播间时打开游戏并立即缩成迷你条，游戏在后台加载并同步牌局，用户点入口展开即显示牌桌；也可再用宿主元素盖住容器实现隐藏预加载。容器须保持在页面中且尺寸不为 0，不要用 `display: none`、`visibility: hidden`、`opacity: 0` 或移出视口隐藏。
 
 ```js
 // 进入群 / 直播间
 container.classList.add('game-mini');
-const game = CocosGameWeb.open({ container, gameUrl, session, onRecordsUpdated, onExpandRequest });
+const game = CocosGameWeb.open({ container, gameUrl, session, onExpandRequest });
 game.setMiniMode(true, '#F4F5F8');
 
 // 用户点击游戏入口
 container.classList.remove('game-mini');
 game.setMiniMode(false);
-
-// 宿主下拉刷新记录：按当前筛选重新拉取第一页，结果经 onRecordsUpdated 返回
-game.refreshRecords(false);   // true 为历史场次
 ```
 
-- `refreshRecords` 游戏打开即可调用（含迷你条），记录页未打开过也可以；游戏已关闭时返回 false。
-- 结果只在手机竖屏宿主弹窗模式下回调；游客调用时回调 `onEvent('auth.login_required', { action: 'records' })`。
 - 切换群 / 直播间时先 `close()` 再 `open`；离开时关闭，不要在群列表对每个群预加载。
 
 ## 目录

@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>牛牛 PC 网页接入示例</title>
+  <style>
+    /* PC 宿主示例：三栏布局，中间群聊面板内嵌游戏，声音 / 规则 / 全屏 / 入座按钮由宿主绘制 */
+    :root { --primary: #1fa39c; --primary-light: #e3f5f3; --line: #e8ebef; --text: #1f2430; --muted: #8a94a6; --page: #f2f4f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 1180px; height: 100vh; display: flex; flex-direction: column; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--page); color: var(--text); }
+    button { font: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+    button:disabled { cursor: default; opacity: .6; }
+    input { font: inherit; }
+    svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    .avatar { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; color: #fff; font-weight: 600; }
+    .avatar.small { width: 26px; height: 26px; font-size: 12px; border: 2px solid #fff; margin-left: -6px; }
+    .avatar.large { width: 44px; height: 44px; }
+    /* 顶部导航 */
+    .topbar { height: 56px; flex: none; display: flex; align-items: center; gap: 36px; padding: 0 24px; background: #fff; border-bottom: 1px solid var(--line); }
+    .logo { font-size: 20px; font-weight: 700; color: #e0322b; }
+    .nav { display: flex; gap: 36px; height: 100%; }
+    .nav button { height: 100%; font-size: 16px; color: #4c5566; border-bottom: 3px solid transparent; }
+    .nav button.is-active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .user { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    /* 三栏 */
+    .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; gap: 10px; padding: 10px; }
+    .panel { min-height: 0; background: #fff; border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-title { padding: 14px 16px 8px; font-size: 18px; font-weight: 600; }
+    .search { margin: 0 12px 10px; padding: 7px 12px; border-radius: 16px; border: 0; background: var(--page); }
+    .chips { display: flex; gap: 8px; padding: 0 12px 10px; }
+    .chip { padding: 2px 14px; border-radius: 14px; color: #4c5566; }
+    .chip.is-active { background: var(--primary); color: #fff; }
+    .conversation { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+    .conversation.is-active { background: var(--primary-light); }
+    .conversation-body { flex: 1; min-width: 0; }
+    .conversation-body p { margin: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conversation-meta { text-align: right; font-size: 12px; color: var(--muted); }
+    .badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #f04b4b; color: #fff; text-align: center; }
+    /* 中间：群信息 + 游戏 */
+    .center { overflow-y: auto; padding: 0 14px 14px; gap: 10px; }
+    .group-header { display: flex; align-items: center; padding-top: 12px; }
+    .group-header h2 { margin: 0; font-size: 18px; }
+    .group-members { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+    .mode-switch { margin-left: auto; display: flex; gap: 8px; }
+    .mode-switch button { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 8px; }
+    .mode-switch button.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .game-tabs { display: flex; gap: 8px; padding: 6px; border-radius: 10px; background: var(--page); }
+    .game-tabs button { flex: 1; padding: 7px 0; border-radius: 8px; background: #fff; font-weight: 600; }
+    .game-tabs button.is-active { background: var(--primary); color: #fff; }
+    .game-card { border-radius: 10px; border: 1px solid var(--line); overflow: hidden; }
+    .game-card[hidden], .chat-placeholder[hidden] { display: none; }
+    .game-stage { position: relative; width: 100%; aspect-ratio: 375 / 211; background: #1b1530; }
+    .game-stage:fullscreen { aspect-ratio: auto; width: 100vw; height: 100vh; }
+    .game-container { position: absolute; inset: 0; }
+    .game-tip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #cfd3dc; }
+    .host-bar { display: flex; align-items: center; gap: 22px; padding: 8px 14px; }
+    .host-bar button { display: flex; align-items: center; gap: 6px; color: #4c5566; }
+    .watch-state { margin-left: auto; display: flex; align-items: center; gap: 6px; color: #4c5566; }
+    .watch-state.is-playing { color: var(--primary); font-weight: 600; }
+    .host-bar .join-button { padding: 7px 26px; border-radius: 8px; background: var(--primary); color: #fff; font-weight: 600; }
+    .play-together { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); }
+    .play-together h3 { margin: 0 0 8px; font-size: 14px; }
+    .friends { display: flex; align-items: center; gap: 22px; }
+    .friend { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: #4c5566; }
+    .invite-add { width: 36px; height: 36px; border-radius: 50%; border: 1px dashed var(--muted); font-size: 20px; color: var(--muted); }
+    .invite-box { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 12px; border-radius: 8px; background: var(--page); }
+    .invite-box input { width: 170px; border: 0; background: none; outline: none; }
+    .invite-box button { padding: 3px 12px; border-radius: 6px; background: var(--primary-light); color: var(--primary); }
+    .chat-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; min-height: 300px; }
+    /* 右侧群聊 */
+    .chat-tabs { display: flex; border-bottom: 1px solid var(--line); }
+    .chat-tabs button { flex: 1; padding: 6px 0; color: #4c5566; border-bottom: 2px solid transparent; }
+    .chat-tabs button.is-active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .messages { flex: 1; overflow-y: auto; padding: 10px 12px; background: #f7f8fa; }
+    .message { display: flex; gap: 8px; margin-bottom: 12px; }
+    .message-body { flex: 1; min-width: 0; }
+    .message-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .bubble { display: inline-block; margin-top: 2px; padding: 6px 10px; border-radius: 8px; background: #fff; }
+    .message.is-self .bubble { background: var(--primary-light); }
+    .system-message { margin: 0 auto 12px; width: fit-content; padding: 3px 14px; border-radius: 12px; background: #eceef2; color: var(--muted); font-size: 12px; }
+    .composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+    .composer input { flex: 1; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; outline: none; }
+    .composer button { padding: 0 16px; border-radius: 6px; background: var(--primary); color: #fff; }
+    /* 宿主提示与登录弹窗 */
+    .toast { position: fixed; left: 50%; top: 80px; transform: translateX(-50%); padding: 8px 18px; border-radius: 8px; background: rgba(20, 24, 32, .85); color: #fff; z-index: 20; }
+    .toast[hidden], .login-mask[hidden] { display: none; }
+    .login-mask { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); z-index: 10; }
+    .login-dialog { width: 340px; padding: 20px; border-radius: 12px; background: #fff; display: grid; gap: 10px; }
+    .login-dialog h3 { margin: 0; }
+    .login-dialog input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+    .login-dialog p { margin: 0; color: var(--muted); font-size: 12px; }
+    .login-actions { display: flex; gap: 8px; }
+    .login-actions button { flex: 1; padding: 8px 0; border-radius: 6px; background: var(--page); }
+    .login-actions button[type="submit"] { background: var(--primary); color: #fff; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">说球帝</div>
+  <nav class="nav">
+    <button type="button">比赛</button><button type="button">即时比分</button>
+    <button type="button" class="is-active">聊天</button><button type="button">资料库</button>
+  </nav>
+  <button id="UserButton" class="user" type="button"><span class="avatar" style="background:#8a94a6">?</span><span id="UserName">未登录</span></button>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <div class="panel-title">消息</div>
+    <input class="search" placeholder="搜索聊天、群组">
+    <div class="chips"><button class="chip is-active" type="button">全部</button><button class="chip" type="button">群聊</button></div>
+    <div id="ConversationList"></div>
+  </aside>
+
+  <section class="panel center">
+    <div class="group-header">
+      <div>
+        <h2>外围群</h2>
+        <div class="group-members"><span>群成员 93</span><span id="MemberAvatars"></span></div>
+      </div>
+      <div class="mode-switch">
+        <button id="ChatModeButton" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>聊天模式</button>
+        <button id="GameModeButton" class="is-active" type="button"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="11" rx="5"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M18 13h.01"/></svg>游戏模式</button>
+      </div>
+    </div>
+    <div id="ChatPlaceholder" class="chat-placeholder" hidden>聊天模式：游戏已关闭，切回游戏模式继续观战</div>
+    <div id="GameSection">
+      <div class="game-tabs" id="GameTabs">
+        <button class="is-active" type="button" data-game="niuniu">牛牛</button>
+        <button type="button" data-game="dragon_tiger">龙虎斗</button>
+        <button type="button" data-game="blackjack">21点</button>
+        <button type="button" data-game="more">更多</button>
+      </div>
+      <div class="game-card" style="margin-top:10px">
+        <div id="GameStage" class="game-stage">
+          <div id="GameTip" class="game-tip">牌桌加载中…</div>
+          <div id="GameContainer" class="game-container"></div>
+        </div>
+        <div class="host-bar">
+          <button id="SoundButton" type="button"><span id="SoundIcon"></span><span>声音</span></button>
+          <button id="RulesButton" type="button"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg><span>规则</span></button>
+          <button id="FullscreenButton" type="button"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg><span id="FullscreenText">横屏全屏</span></button>
+          <span id="WatchState" class="watch-state"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span id="WatchText">旁观中</span></span>
+          <button id="JoinButton" class="join-button" type="button">进入牌桌</button>
+        </div>
+      </div>
+      <div class="play-together" style="margin-top:10px">
+        <h3>同群一起玩</h3>
+        <div class="friends" id="FriendList">
+          <div class="friend"><button class="invite-add" type="button" id="InviteAddButton">+</button>邀请好友</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="panel-title">群聊</div>
+    <div class="chat-tabs"><button class="is-active" type="button">聊天</button><button type="button">成员</button></div>
+    <div id="MessageList" class="messages"></div>
+    <form id="Composer" class="composer"><input id="MessageInput" placeholder="说点什么…" autocomplete="off"><button type="submit">发送</button></form>
+  </aside>
+</main>
+
+<div id="Toast" class="toast" hidden></div>
+<div id="LoginMask" class="login-mask" hidden>
+  <form id="LoginForm" class="login-dialog">
+    <h3>登录后进入牌桌</h3>
+    <input id="Account" placeholder="测试账号" autocomplete="username">
+    <input id="Password" type="password" placeholder="密码" autocomplete="current-password">
+    <p>仅测试用：通过游戏站点的同源登录代理换取凭据，正式宿主复用自身登录体系。</p>
+    <div class="login-actions"><button id="LoginCancelButton" type="button">取消</button><button type="submit">登录</button></div>
+  </form>
+</div>
+
+<script src="../cocos_game_web.js"></script>
+<script>
+  // 示例配置：部署在游戏站点 /sdk/demo/ 下时默认打开同站点游戏；场景可用 ?sceneType=&sceneId= 覆盖
+  const DEFAULT_GAME_URL = 'https://niuniu-web-test.pages.dev/';
+  const IS_ON_GAME_SITE = /\/sdk\/demo\/pc(\.html)?$/.test(location.pathname);
+  const PAGE_PARAMS = new URLSearchParams(location.search);
+  const GAME_URL = PAGE_PARAMS.get('gameUrl') || (IS_ON_GAME_SITE ? new URL('../../', location.href).href : DEFAULT_GAME_URL);
+  const SCENE = { sceneType: Number(PAGE_PARAMS.get('sceneType') || 1), sceneId: PAGE_PARAMS.get('sceneId') || '3947124' };
+  const LOGIN_PRODUCT_ID = '4';
+  const LOGIN_CLIENT_VERSION = '1.120';
+  const TOAST_DURATION_MS = 2000;
+  const AVATAR_COLORS = ['#f0a04b', '#4b8bf0', '#e0607e', '#38b48b', '#8a6cf0'];
+  // 静态示例数据：消息列表、群聊与同群玩家
+  const CONVERSATIONS = [
+    { name: '外围群', text: '再来一杯茶：这把可以啊！', time: '16:11', unread: 10, isActive: true },
+    { name: '看球交流', text: '今晚的比赛你们怎么看？', time: '15:49' },
+    { name: '赛事讨论', text: '英超这轮挺精彩的！', time: '14:32' },
+  ];
+  const MESSAGES = [
+    { name: '再来一杯茶', text: '这局手气还行，差点牛8！', time: '15:58' },
+    { name: '夏日限定', text: '哇，牛7也不错啊 👍', time: '16:00' },
+    { name: '小小幸运星', text: '我这把有点可惜，差一张就牛9了。', time: '16:02' },
+    { name: '星河入梦', text: '庄家发得挺平均的，继续来一把？', time: '16:04' },
+    { system: '再来一杯茶 进入了牌桌' },
+    { name: '小小幸运星', text: '来了，准备开下一局！', time: '16:07' },
+  ];
+  const FRIENDS = ['再来一杯茶', '夏日限定', '星河入梦', '小小幸运星'];
+  const GUEST_SESSION = { ...SCENE, clientVersion: '1.0.0', deviceType: 'H5' };
+  let game = null;
+  let session = GUEST_SESSION;
+  let isMuted = false;
+  let isPlaying = false;
+  let toastTimer = 0;
+
+  /**
+   * 按名字生成首字头像节点。
+   */
+  function createAvatar(name, className = '') {
+    const avatar = document.createElement('span');
+    avatar.className = `avatar ${className}`;
+    avatar.textContent = name.slice(0, 1);
+    avatar.style.background = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
+    return avatar;
+  }
+
+  /**
+   * 宿主轻提示。
+   */
+  function showToast(message) {
+    const toast = document.getElementById('Toast');
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, TOAST_DURATION_MS);
+  }
+
+  /**
+   * 渲染左侧消息列表、群成员头像与同群玩家。
+   */
+  function renderStaticPanels() {
+    document.getElementById('ConversationList').innerHTML = CONVERSATIONS.map((item) => `
+      <div class="conversation${item.isActive ? ' is-active' : ''}">
+        <span data-avatar="${item.name}"></span>
+        <div class="conversation-body"><strong>${item.name}</strong><p>${item.text}</p></div>
+        <div class="conversation-meta">${item.unread ? `<span class="badge">${item.unread}</span><br>` : ''}${item.time}</div>
+      </div>`).join('');
+    document.querySelectorAll('[data-avatar]').forEach((node) => node.replaceWith(createAvatar(node.dataset.avatar)));
+    const members = document.getElementById('MemberAvatars');
+    FRIENDS.forEach((name) => members.append(createAvatar(name, 'small')));
+    const friendList = document.getElementById('FriendList');
+    FRIENDS.forEach((name) => {
+      const friend = document.createElement('div');
+      friend.className = 'friend';
+      friend.append(createAvatar(name), name);
+      friendList.append(friend);
+    });
+    friendList.insertAdjacentHTML('beforeend', '<div class="invite-box"><input id="InviteInput" placeholder="输入好友昵称邀请…"><button id="InviteButton" type="button">邀请</button></div>');
+  }
+
+  /**
+   * 追加一条群聊消息（示例仅本地展示）。
+   */
+  function appendMessage(item) {
+    const list = document.getElementById('MessageList');
+    if (item.system) {
+      list.insertAdjacentHTML('beforeend', `<div class="system-message">${item.system}</div>`);
+    } else {
+      const message = document.createElement('div');
+      message.className = `message${item.isSelf ? ' is-self' : ''}`;
+      const body = document.createElement('div');
+      body.className = 'message-body';
+      body.innerHTML = '<div class="message-head"><span></span><span></span></div><span class="bubble"></span>';
+      body.querySelector('.message-head span').textContent = item.name;
+      body.querySelector('.message-head span:last-child').textContent = item.time;
+      body.querySelector('.bubble').textContent = item.text;
+      message.append(createAvatar(item.name), body);
+      list.append(message);
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  /**
+   * 同步宿主声音按钮图标。
+   */
+  function renderSoundButton() {
+    const wave = isMuted ? '<path d="M16 9l5 6M21 9l-5 6"/>' : '<path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>';
+    document.getElementById('SoundIcon').innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/>${wave}</svg>`;
+  }
+
+  /**
+   * 同步「旁观中 / 游戏中」状态与进入牌桌按钮。
+   */
+  function renderPlayingState() {
+    document.getElementById('WatchState').classList.toggle('is-playing', isPlaying);
+    document.getElementById('WatchText').textContent = isPlaying ? '游戏中' : '旁观中';
+    const joinButton = document.getElementById('JoinButton');
+    joinButton.disabled = isPlaying || !game;
+    joinButton.textContent = isPlaying ? '已在牌桌' : '进入牌桌';
+  }
+
+  /**
+   * 宿主控制栏的「横屏全屏」：把游戏区域（不含控制栏）切到浏览器全屏，并同步给游戏。
+   */
+  async function setStageFullscreen(isFullscreen) {
+    try {
+      if (isFullscreen && !document.fullscreenElement) await document.getElementById('GameStage').requestFullscreen();
+      if (!isFullscreen && document.fullscreenElement) await document.exitFullscreen();
+    } catch (error) {
+      console.error('切换全屏失败', { isFullscreen, error });
+      showToast('浏览器不允许全屏');
+    }
+  }
+
+  /**
+   * 浏览器全屏状态变化（含按 Esc 退出）时同步按钮文案与游戏状态。
+   */
+  function handleFullscreenChange() {
+    const isFullscreen = document.fullscreenElement === document.getElementById('GameStage');
+    document.getElementById('FullscreenText').textContent = isFullscreen ? '退出全屏' : '横屏全屏';
+    game?.updateFullscreenState(isFullscreen);
+  }
+
+  /**
+   * 处理游戏通用事件：游客操作需要登录时弹出宿主登录框。
+   */
+  function handleGameEvent(name, payload) {
+    if (name === CocosGameWeb.Events.LOGIN_REQUIRED) {
+      showToast('请先登录');
+      document.getElementById('LoginMask').hidden = false;
+      return;
+    }
+    if (name === CocosGameWeb.Events.GAME_TOAST) showToast(payload.message);
+  }
+
+  /**
+   * 以当前会话打开牛牛：电脑形态，游戏内声音 / 规则 / 加入 / 全屏按钮全部隐藏，交给宿主控制栏。
+   */
+  function openGame() {
+    if (game) game.close();
+    document.getElementById('GameTip').textContent = '牌桌加载中…';
+    game = CocosGameWeb.open({
+      container: document.getElementById('GameContainer'),
+      gameUrl: GAME_URL,
+      session,
+      deviceMode: 'desktop',
+      showSoundButton: false,
+      showRulesButton: false,
+      showJoinButton: false,
+      showFullscreenButton: false,
+      showBackButton: false,
+      muted: isMuted,
+      onFullscreenRequest: setStageFullscreen,
+      onReady() { document.getElementById('GameTip').textContent = ''; renderPlayingState(); },
+      onError(error) { document.getElementById('GameTip').textContent = `启动失败：${error.message}`; },
+      onSessionInvalid(message) { showToast(`登录已失效：${message}`); },
+      onEvent: handleGameEvent,
+      onMutedChange(value) { isMuted = value; renderSoundButton(); },
+      onPlayingStateChange(value) { isPlaying = value; renderPlayingState(); },
+      onExitRequest(decide, message) { decide(window.confirm(message)); },
+      onClose() { game = null; isPlaying = false; renderPlayingState(); setGameMode(false); },
+    });
+  }
+
+  /**
+   * 切换聊天模式 / 游戏模式：聊天模式关闭游戏，游戏模式重新打开。
+   */
+  function setGameMode(isGameMode) {
+    document.getElementById('GameModeButton').classList.toggle('is-active', isGameMode);
+    document.getElementById('ChatModeButton').classList.toggle('is-active', !isGameMode);
+    document.getElementById('GameSection').hidden = !isGameMode;
+    document.getElementById('ChatPlaceholder').hidden = isGameMode;
+    if (isGameMode && !game) openGame();
+    if (!isGameMode && game) game.close();
+  }
+
+  /**
+   * 测试登录：换取凭据后以登录会话重新打开游戏，密码不保存。
+   */
+  async function login(event) {
+    event.preventDefault();
+    const account = document.getElementById('Account').value.trim();
+    const passwordInput = document.getElementById('Password');
+    if (!account || !passwordInput.value) return showToast('请输入账号和密码');
+    try {
+      const url = new URL('/prod-api/login', GAME_URL);
+      Object.entries({ account, password: passwordInput.value, apptype: '1', pid: LOGIN_PRODUCT_ID, countryCode: '86' })
+        .forEach(([key, value]) => url.searchParams.set(key, value));
+      const response = await fetch(url, { headers: { pid: LOGIN_PRODUCT_ID, version: LOGIN_CLIENT_VERSION } });
+      const payload = await response.json();
+      if (String(payload.code) !== '0') throw new Error(payload.msg || '登录失败');
+      session = { ...GUEST_SESSION, liveUserId: Number(payload.uid), imUserId: Number(payload.userinfo?.imUserId ?? 0), liveToken: payload.token };
+      document.getElementById('UserName').textContent = payload.userinfo?.nickname || `UID ${payload.uid}`;
+      document.getElementById('LoginMask').hidden = true;
+      showToast('登录成功');
+      openGame();
+    } catch (error) {
+      console.error('Demo 登录失败', error);
+      showToast(`登录失败：${error.message}`);
+    } finally {
+      passwordInput.value = '';
+    }
+  }
+
+  /**
+   * 绑定宿主按钮：声音 / 规则 / 全屏 / 进入牌桌直接调用 SDK 方法。
+   */
+  function bindHostControls() {
+    document.getElementById('SoundButton').addEventListener('click', () => {
+      isMuted = !isMuted;
+      renderSoundButton();
+      game?.setMuted(isMuted);
+    });
+    document.getElementById('RulesButton').addEventListener('click', () => {
+      if (!game?.openRules()) showToast('牌桌加载中，请稍候');
+    });
+    document.getElementById('FullscreenButton').addEventListener('click', () => setStageFullscreen(!document.fullscreenElement));
+    document.getElementById('JoinButton').addEventListener('click', () => {
+      if (!game?.joinTable()) showToast('牌桌加载中，请稍候');
+    });
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  }
+
+  /**
+   * 绑定其余示例交互：游戏标签、模式切换、登录、群聊发送与邀请。
+   */
+  function bindPageControls() {
+    document.getElementById('GameTabs').addEventListener('click', (event) => {
+      const tab = event.target.closest('button');
+      if (tab && tab.dataset.game !== 'niuniu') showToast('敬请期待');
+    });
+    document.getElementById('ChatModeButton').addEventListener('click', () => setGameMode(false));
+    document.getElementById('GameModeButton').addEventListener('click', () => setGameMode(true));
+    document.getElementById('UserButton').addEventListener('click', () => { document.getElementById('LoginMask').hidden = false; });
+    document.getElementById('LoginCancelButton').addEventListener('click', () => { document.getElementById('LoginMask').hidden = true; });
+    document.getElementById('LoginForm').addEventListener('submit', login);
+    document.getElementById('Composer').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = document.getElementById('MessageInput');
+      if (!input.value.trim()) return;
+      appendMessage({ name: document.getElementById('UserName').textContent, text: input.value.trim(), time: new Date().toTimeString().slice(0, 5), isSelf: true });
+      input.value = '';
+    });
+    document.getElementById('InviteButton').addEventListener('click', () => showToast('邀请已发送（示例）'));
+    document.getElementById('InviteAddButton').addEventListener('click', () => document.getElementById('InviteInput').focus());
+  }
+
+  renderStaticPanels();
+  MESSAGES.forEach(appendMessage);
+  renderSoundButton();
+  renderPlayingState();
+  bindHostControls();
+  bindPageControls();
+  openGame();
+</script>
+</body>
+</html>

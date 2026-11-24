@@ -918,7 +918,7 @@
   /**
    * 网页弹窗：游戏注册弹窗页面后，在视口最上层用透明沙箱 iframe（srcdoc）展示记录与规则、退出确认、下注抽屉，游戏 iframe 不动。
    * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / betSelection / closed，SDK → 页面为 open / updateRecords / dismiss。
-   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed), onBetSelection(areaCode, amountCent), onDialogClosed(dialog) }。
+   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed), onBetSelection(areaCode, amountCent), onDialogClosed(dialog), onPageReady() }。
    */
   function createWebDialogFrame(handlers) {
     let frame = null;
@@ -1033,6 +1033,7 @@
         const message = pendingMessage;
         pendingMessage = null;
         if (message && isShowing) sendToPage(message.type, message.payload);
+        handlers.onPageReady();
       } else if (data.type === 'closed') {
         handlePageClosed(readString(payload, 'dialog'));
       } else if (data.type === 'recordsQuery') {
@@ -1108,6 +1109,8 @@
       openBet: (content) => open(WEB_DIALOG_BET, content),
       closeBet,
       isBetSupported: () => isPageReady && hasBetDialog,
+      // 已注册页面但尚未加载完成
+      isPageLoading: () => Boolean(pageHtml) && !isPageReady,
       // 能否立即打开下注抽屉：页面支持，并且没有展示记录与规则或退出确认等其他弹窗
       canShowBet: () => isPageReady && hasBetDialog && (!isShowing || openedDialog === WEB_DIALOG_BET),
       updateRecords: (records) => {
@@ -1120,8 +1123,7 @@
 
   /**
    * 宿主弹窗控制器：处理游戏的弹窗请求，操作结果经 sendResult 回传游戏。
-   * 宿主传入 onBetOptions 即接管竖屏下注、传入 onShowRecords 即接管竖屏记录与规则、传入 onExitRequest 即接管退出确认；
-   * 未传时由 SDK 在宿主页面展示自带界面。
+   * 竖屏下注与记录统一由热更新自绘弹窗展示（游戏模块未提供弹窗页面时用 SDK 自带界面）；宿主传入 onExitRequest 即接管退出确认。
    */
   function createHostDialogs(context) {
     let betCard = null;
@@ -1130,11 +1132,9 @@
     let exitToken = 0;
     // 网页确认框当前待回传的退出决定
     let webExitDecision = null;
-    // 其他网页弹窗展示中时暂存的下注选项，关闭后补弹
+    // 弹窗页面加载中或其他网页弹窗展示中时暂存的下注选项，加载完成或关闭后补弹
     let pendingBetOptions = null;
     const betCoordinator = createBetCoordinator();
-    const isHostHandlingBet = typeof context.onBetOptions === 'function';
-    const isHostHandlingRecords = typeof context.onShowRecords === 'function';
     const webDialog = createWebDialogFrame({
       onRecordsQuery: (query) => sendRecordsQuery(readString(query, 'action') || 'query', {
         isHistory: Boolean(query.isHistory),
@@ -1147,6 +1147,7 @@
       onDialogClosed: (dialog) => {
         if (dialog !== WEB_DIALOG_BET) showPendingWebBet();
       },
+      onPageReady: () => showPendingWebBet(),
     });
 
     function sendRecordsQuery(action, query) {
@@ -1164,11 +1165,19 @@
         betCard?.dismiss();
         return;
       }
-      const isNewRound = betCoordinator.openRound(options, data.reopen === true);
-      if (isHostHandlingBet) {
-        if (isNewRound) invokeCallback('onBetOptions', context.onBetOptions, options);
+      betCoordinator.openRound(options, data.reopen === true);
+      if (webDialog.isPageLoading()) {
+        betCard?.dismiss();
+        pendingBetOptions = data;
         return;
       }
+      presentBet(data);
+    }
+
+    /**
+     * 页面支持时打开下注抽屉；游戏模块未提供支持下注抽屉的页面（旧版游戏模块）时用 SDK 加注卡片。
+     */
+    function presentBet(data) {
       if (webDialog.isBetSupported()) {
         betCard?.dismiss();
         showWebBet(data);
@@ -1188,12 +1197,12 @@
     }
 
     /**
-     * 其他网页弹窗关闭后，本局仍在下注时补弹下注抽屉。
+     * 弹窗页面加载完成或其他网页弹窗关闭后，本局仍在下注时补弹下注。
      */
     function showPendingWebBet() {
       const data = pendingBetOptions;
       pendingBetOptions = null;
-      if (data) showWebBet(data);
+      if (data) presentBet(data);
     }
 
     /**
@@ -1207,8 +1216,7 @@
       betCard?.dismiss();
       pendingBetOptions = null;
       webDialog.closeBet();
-      const roundId = betCoordinator.closeRound();
-      if (roundId) invokeCallback('onBetClosed', context.onBetClosed, roundId);
+      betCoordinator.closeRound();
     }
 
     function submitBet(request) {
@@ -1235,10 +1243,6 @@
     }
 
     function showRules(content) {
-      if (isHostHandlingRecords) {
-        invokeCallback('onShowRecords', context.onShowRecords, content);
-        return;
-      }
       rulesSheet?.close(false);
       rulesSheet = null;
       if (webDialog.isAvailable()) {
@@ -1287,11 +1291,10 @@
       } else if (method === 'dismissBetOptions') {
         closeBetRound();
       } else if (method === 'notifyBetResult') {
-        invokeCallback('onBetResult', context.onBetResult, betCoordinator.handleResult(data));
+        betCoordinator.handleResult(data);
       } else if (method === 'showRules') {
         showRules(data);
       } else if (method === 'updateRecords') {
-        invokeCallback('onRecordsUpdated', context.onRecordsUpdated, data);
         if (rulesSheet?.isOpen()) rulesSheet.updateRecords(data);
         webDialog.updateRecords(data);
       } else if (method === 'requestExitGame') {
@@ -1302,7 +1305,7 @@
     }
 
     /**
-     * 进入全屏或关闭游戏时收起全部宿主弹窗并通知宿主本局下注截止，未决定的退出确认按取消回传。
+     * 进入全屏或关闭游戏时收起全部宿主弹窗，未决定的退出确认按取消回传。
      */
     function dismissAll() {
       closeBetRound();
@@ -1371,20 +1374,11 @@
    *   onDialogChange(isVisible)       游戏内弹窗打开/全部关闭时回调
    *   hostDialogs          手机竖屏内嵌时由本页面展示下注卡片、记录与规则、退出确认，默认 true；全屏与电脑（deviceMode 判定）仍用游戏内弹窗
    *   betContainer         可选，SDK 加注卡片放入的宿主页面元素（卡片撑满宽度、无外边距，收起时移出）；不传时挂在游戏容器正下方；
-   *                        打开后可调用 setBetContainer 切换；传了 onBetOptions 时由宿主自绘，此项不生效
+   *                        打开后可调用 setBetContainer 切换；已废弃：0.4.2 起竖屏下注统一由热更新下注抽屉展示，仅旧版游戏模块的加注卡片使用
    *   onExitRequest(decide, message) 改写宿主退出确认：传入后由宿主自行弹窗展示 message（服务端离座确认文案），调用 decide(true) 离开、decide(false) 取消；
    *                                  电脑（deviceMode 判定）非全屏点牌桌「退出」同样回调，未传或全屏时用游戏内确认框；确认后离座转为观战，不关闭游戏
-   *   onBetOptions(options)          传入即由宿主自绘竖屏下注：options { roundId, countdownSeconds, deadline, areas:[{ areaCode, areaName }], chipsCent }，
-   *                                  玩家选好后调用 submitBet；配套 onBetClosed(roundId)、onBetResult(result)；
-   *                                  电脑端迷你条状态下也会回调（展开后先回调 onBetClosed，再改用游戏内下注框）；
-   *                                  result { roundId, areaCode, amountCent, clientBetNo, isSuccess, balanceCent, errorMessage, availableBalanceCent, errorCode, serverMessage }，
-   *                                  errorCode / serverMessage 为服务端原始 code、msg（如 4100、余额不足，本地校验失败时为 null / ''），errorMessage 为游戏拼好的提示；
-   *                                  余额不足时 errorMessage 为「余额不足，可用余额 ¥x」，availableBalanceCent 为服务端返回的可用余额（分），其余情况为 null
-   *   onShowRecords(content)         传入即由宿主自绘竖屏记录与规则：content 含 title、sections 与 records；
-   *                                  records.current.items[] 除 title/detail/result/tone/type 文案外带 amounts 结构化金额（分）：
-   *                                  { amountCent, stakeCent, payoutCent, rakeCent, netCent, betStatus, settleOutcomeName }，未结算时 payoutCent/rakeCent/netCent 为 null；
-   *                                  记录更新回调 onRecordsUpdated(records)，查询调用 queryRecords / loadMoreRecords
-   *                                  （以上宿主回调仅在 hostDialogs 未关闭时生效，全屏时由游戏内弹窗展示）
+   *   onBetOptions / onBetClosed / onBetResult / onShowRecords / onRecordsUpdated
+   *                                  已废弃：0.4.2 起竖屏下注与记录统一由游戏热更新自绘弹窗展示，传入也不再回调
    *   onExpandRequest()              玩家点击迷你条展开按钮：宿主恢复容器高度后调用 setMiniMode(false)；未传时直接退出迷你模式
    *   onReady() / onError(error) / onSessionInvalid(message) / onEvent(event, payload) / onFullscreenChange(isFullscreen)
    *   onPlayingStateChange(isPlaying) 在座参与状态变化：入座为 true，点击退出确认离座成功后为 false
@@ -1428,11 +1422,6 @@
       getBetContainer: () => betContainer,
       dialogMask: options.dialogMask || null,
       onExitRequest: options.onExitRequest,
-      onBetOptions: options.onBetOptions,
-      onBetClosed: options.onBetClosed,
-      onBetResult: options.onBetResult,
-      onShowRecords: options.onShowRecords,
-      onRecordsUpdated: options.onRecordsUpdated,
       sendResult: (message) => postToGame('dialogResult', { message }),
     });
 
@@ -1626,7 +1615,7 @@
             hostDialogs: hostDialogs !== null,
             hostBack: true,
             hostExitRequest: hostDialogs !== null && typeof options.onExitRequest === 'function',
-            hostBetOptions: hostDialogs !== null && typeof options.onBetOptions === 'function',
+            hostBetOptions: false,
           },
           capabilities: CAPABILITIES,
         });
@@ -1698,26 +1687,28 @@
        */
       setMiniMode,
       /**
-       * 宿主自绘下注时提交：{ roundId, areaCode, amountCent, clientBetNo }；返回 true 表示已发出，结果经 onBetResult 回调；
+       * 提交下注：{ roundId, areaCode, amountCent, clientBetNo }；返回 true 表示已发出（结果不再回调）；
        * 本局已截止、游戏已关闭、幂等号重复或注区金额不在本局选项内时返回 false。
+       * 已废弃：0.4.2 起竖屏下注统一由热更新下注抽屉展示，宿主无需调用。
        */
       submitBet(request) {
         return !isClosed && hostDialogs !== null && hostDialogs.submitBet(request);
       },
       /**
-       * 宿主自绘记录时按条件查询：{ isHistory, filterKey, periodIndex, keyword }，结果经 onRecordsUpdated 回调。
+       * 按条件查询记录：{ isHistory, filterKey, periodIndex, keyword }（结果展示在热更新记录弹窗，不再回调）。
+       * 已废弃：0.4.2 起记录统一由热更新记录弹窗展示，宿主无需调用。
        */
       queryRecords(query) {
         return !isClosed && hostDialogs !== null && hostDialogs.queryRecords(query);
       },
       /**
-       * 宿主自绘记录时加载下一页，结果经 onRecordsUpdated 回调。
+       * 加载下一页记录（结果展示在热更新记录弹窗，不再回调）。已废弃：宿主无需调用。
        */
       loadMoreRecords(isHistory) {
         return !isClosed && hostDialogs !== null && hostDialogs.loadMoreRecords(isHistory);
       },
       /**
-       * 宿主下拉刷新：按当前筛选条件重新拉取记录首页，结果经 onRecordsUpdated 回调；游戏打开即可调用（含迷你条）。
+       * 按当前筛选条件重新拉取记录首页（结果展示在热更新记录弹窗，不再回调）。已废弃：宿主无需调用。
        */
       refreshRecords(isHistory) {
         return !isClosed && hostDialogs !== null && hostDialogs.refreshRecords(isHistory);
