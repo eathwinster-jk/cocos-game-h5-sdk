@@ -18,6 +18,7 @@
   const WEB_DIALOG_PAGE_SOURCE = 'cocos-dialog-page';
   const WEB_DIALOG_HOST_SOURCE = 'cocos-dialog-host';
   const WEB_DIALOG_CLOSE_TIMEOUT_MS = 600;
+  const WEB_DIALOG_BET = 'bet';
   const MINI_DEFAULT_BACKGROUND = '#FFFFFF';
   // 设备形态：auto 自动判断，mobile / desktop 由宿主强制（影响竖屏宿主弹窗与竖持旋转横屏）。
   const DEVICE_MODES = Object.freeze(['auto', 'mobile', 'desktop']);
@@ -915,9 +916,9 @@
   }
 
   /**
-   * 网页弹窗：游戏注册弹窗页面后，在视口最上层用透明沙箱 iframe（srcdoc）展示记录与规则、退出确认，游戏 iframe 不动。
-   * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / closed，SDK → 页面为 open / updateRecords / dismiss。
-   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed) }。
+   * 网页弹窗：游戏注册弹窗页面后，在视口最上层用透明沙箱 iframe（srcdoc）展示记录与规则、退出确认、下注抽屉，游戏 iframe 不动。
+   * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / betSelection / closed，SDK → 页面为 open / updateRecords / dismiss。
+   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed), onBetSelection(areaCode, amountCent), onDialogClosed(dialog) }。
    */
   function createWebDialogFrame(handlers) {
     let frame = null;
@@ -927,6 +928,9 @@
     let isShowing = false;
     let openSerial = 0;
     let pendingMessage = null;
+    // 页面 ready 时声明是否支持下注抽屉；旧版热更新页面不支持
+    let hasBetDialog = false;
+    let openedDialog = '';
 
     /**
      * 保存游戏注册的页面并预加载；同版本重复注册忽略。
@@ -969,6 +973,8 @@
       isPageReady = false;
       isShowing = false;
       pendingMessage = null;
+      hasBetDialog = false;
+      openedDialog = '';
     }
 
     /**
@@ -987,6 +993,7 @@
       const message = { type: 'open', payload: { dialog, content, mask: mask || true } };
       if (!isShowing) setPageScrollLocked(true);
       isShowing = true;
+      openedDialog = dialog;
       openSerial += 1;
       frame.style.display = 'block';
       if (isPageReady) sendToPage(message.type, message.payload);
@@ -1022,19 +1029,54 @@
       const payload = data.payload && typeof data.payload === 'object' ? data.payload : {};
       if (data.type === 'ready') {
         isPageReady = true;
+        hasBetDialog = readArray(payload, 'dialogs').includes(WEB_DIALOG_BET);
         const message = pendingMessage;
         pendingMessage = null;
         if (message && isShowing) sendToPage(message.type, message.payload);
       } else if (data.type === 'closed') {
-        hide();
+        handlePageClosed(readString(payload, 'dialog'));
       } else if (data.type === 'recordsQuery') {
         handlers.onRecordsQuery(payload);
       } else if (data.type === 'exitDecision') {
         scheduleHideTimeout();
         handlers.onExitDecision(Boolean(payload.isConfirmed));
+      } else if (data.type === 'betSelection') {
+        handleBetSelection(payload);
       } else {
         console.warn('CocosGameWeb 忽略未知弹窗页面消息', data.type);
       }
+    }
+
+    /**
+     * 页面弹窗已移除：隐藏 iframe；仍在展示的弹窗关闭时回调（SDK 主动 dismiss 后已隐藏，不再回调）。
+     */
+    function handlePageClosed(dialog) {
+      const isCurrentClosed = isShowing && dialog !== '' && dialog === openedDialog;
+      hide();
+      if (isCurrentClosed) handlers.onDialogClosed(dialog);
+    }
+
+    /**
+     * 下注抽屉选中筹码：校验字段后回传，页面随后自行关闭。
+     */
+    function handleBetSelection(payload) {
+      scheduleHideTimeout();
+      const areaCode = readString(payload, 'areaCode');
+      const amountCent = Number(payload.amountCent);
+      if (!areaCode || !Number.isSafeInteger(amountCent) || amountCent <= 0) {
+        console.error('CocosGameWeb 下注抽屉参数无效', payload);
+        return;
+      }
+      handlers.onBetSelection(areaCode, amountCent);
+    }
+
+    /**
+     * 带动画关闭下注抽屉，页面回传 closed 后隐藏，超时强制隐藏。
+     */
+    function closeBet() {
+      if (!isShowing || openedDialog !== WEB_DIALOG_BET) return;
+      sendToPage('dismiss', {});
+      scheduleHideTimeout();
     }
 
     /**
@@ -1063,6 +1105,11 @@
       isAvailable: () => Boolean(pageHtml),
       openRules: (content, mask) => open('rules', content, mask),
       openConfirm: (content, mask) => open('confirm', content, mask),
+      openBet: (content) => open(WEB_DIALOG_BET, content),
+      closeBet,
+      isBetSupported: () => isPageReady && hasBetDialog,
+      // 能否立即打开下注抽屉：页面支持，并且没有展示记录与规则或退出确认等其他弹窗
+      canShowBet: () => isPageReady && hasBetDialog && (!isShowing || openedDialog === WEB_DIALOG_BET),
       updateRecords: (records) => {
         if (isShowing && isPageReady) sendToPage('updateRecords', records);
       },
@@ -1083,6 +1130,8 @@
     let exitToken = 0;
     // 网页确认框当前待回传的退出决定
     let webExitDecision = null;
+    // 其他网页弹窗展示中时暂存的下注选项，关闭后补弹
+    let pendingBetOptions = null;
     const betCoordinator = createBetCoordinator();
     const isHostHandlingBet = typeof context.onBetOptions === 'function';
     const isHostHandlingRecords = typeof context.onShowRecords === 'function';
@@ -1094,6 +1143,10 @@
         keyword: readString(query, 'keyword'),
       }),
       onExitDecision: (isConfirmed) => webExitDecision?.(isConfirmed),
+      onBetSelection: (areaCode, amountCent) => sendBetSelection(areaCode, amountCent, createClientBetNo()),
+      onDialogClosed: (dialog) => {
+        if (dialog !== WEB_DIALOG_BET) showPendingWebBet();
+      },
     });
 
     function sendRecordsQuery(action, query) {
@@ -1116,8 +1169,31 @@
         if (isNewRound) invokeCallback('onBetOptions', context.onBetOptions, options);
         return;
       }
+      if (webDialog.isBetSupported()) {
+        betCard?.dismiss();
+        showWebBet(data);
+        return;
+      }
       betCard = betCard || createBetCard(context.container, context.getBetContainer, (areaCode, amountCent) => sendBetSelection(areaCode, amountCent, createClientBetNo()));
       betCard.show(data);
+    }
+
+    /**
+     * 用热更新自绘下注抽屉展示本局下注；其他网页弹窗展示中时暂存，关闭后补弹。
+     */
+    function showWebBet(data) {
+      pendingBetOptions = null;
+      if (webDialog.canShowBet()) webDialog.openBet(data);
+      else pendingBetOptions = data;
+    }
+
+    /**
+     * 其他网页弹窗关闭后，本局仍在下注时补弹下注抽屉。
+     */
+    function showPendingWebBet() {
+      const data = pendingBetOptions;
+      pendingBetOptions = null;
+      if (data) showWebBet(data);
     }
 
     /**
@@ -1129,6 +1205,8 @@
 
     function closeBetRound() {
       betCard?.dismiss();
+      pendingBetOptions = null;
+      webDialog.closeBet();
       const roundId = betCoordinator.closeRound();
       if (roundId) invokeCallback('onBetClosed', context.onBetClosed, roundId);
     }

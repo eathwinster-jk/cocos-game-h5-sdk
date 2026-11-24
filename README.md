@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.0/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.1/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -200,13 +200,15 @@ const game = CocosGameWeb.open({
 
 - `hostDialogs: false`：手机竖屏也使用游戏内弹窗。
 - `onExitRequest(decide, message)`：改用宿主自己的退出确认框，展示 `message`（0.3.6 起），调用 `decide(true)` 离开、`decide(false)` 取消。
-- 下注卡片默认插入在游戏容器正下方，请为其预留约 120~200px 空间；也可以放进宿主自己的容器，见下一节。
+- 0.4.1 起竖屏下注默认展示游戏热更新下发的底部下注抽屉，浮在页面最上层，不改动宿主布局；旧版本游戏模块仍使用加注卡片（默认插入在游戏容器正下方，请预留约 120~200px 空间，也可以放进宿主自己的容器，见下一节）。
 - 0.1.11 起弹窗按钮样式不受宿主页面全局 `button` 样式影响。
 - 0.4.0 起记录与规则、退出确认优先展示游戏热更新下发的自绘弹窗（宿主页面上的透明 iframe），游戏未下发时仍用 SDK 自带弹窗；`onExitRequest` 等宿主回调优先级不变，接口无变化。
 
 ## 竖屏下注弹窗：三种接入方式（0.3.5）
 
 竖屏下注界面可以直接用 SDK 提供的加注卡片，也可以宿主自绘；用 SDK 卡片时还能指定放在哪个容器里。全屏时统一用游戏内弹窗。
+
+> 0.4.1 起（需新游戏模块）：未传 `onBetOptions` 时，竖屏下注改为游戏随热更新下发的底部下注抽屉（白色、无遮罩，打开时拦截宿主页面触摸，点抽屉外透明区域可提前关闭，下注成功或倒计时结束自动关闭），筹码额度取自游戏后台的牌桌配置；抽屉样式与位置随游戏热更新调整，无需更新脚本。方式 A 的加注卡片与方式 B 的 `betContainer` 仅在旧版本游戏模块上生效，方式 C 不受影响。
 
 | 方式 | 宿主要做的 | 界面 | 位置 |
 | --- | --- | --- | --- |
