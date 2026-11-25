@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.4.2/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.5.0/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -126,6 +126,8 @@ game.setControlsVisible({ sound: true, rules: true }); // 批量切换：sound /
 
 ## 竖屏提示交给宿主（0.3.3）
 
+> 0.5.0 起竖屏提示统一由游戏热更新自绘弹窗在屏幕居中展示（黑色半透明，2 秒后自动消失），游戏不再发送 `game.toast`，`showGameToast` / `setGameToastVisible` 不再生效，已接入的代码不会报错，升级后可删除。以下为 0.5.0 之前的用法。
+
 竖屏下游戏弹出提示（如「加入失败，请稍后重试」）时，会通过 `onEvent` 回调 `game.toast`，载荷为 `{ message, level }`。宿主关闭游戏内提示后，可用自己的样式展示：
 
 ```js
@@ -213,6 +215,13 @@ const game = CocosGameWeb.open({
 - 旧版本游戏模块未下发弹窗页面时，才使用 SDK 自带的加注卡片（默认在游戏容器正下方，可用 `betContainer` / `setBetContainer` 放进宿主容器）。
 
 > 0.4.2 起以下宿主自绘接口已废弃：`onBetOptions`、`onBetClosed`、`onBetResult`、`onShowRecords`、`onRecordsUpdated` 传入也不再回调；`submitBet`、`queryRecords`、`loadMoreRecords`、`refreshRecords` 宿主无需调用。已接入的代码不会报错，升级后可删除。
+
+## 通用热更新弹窗（0.5.0）
+
+- 游戏可以打开任意名称的热更新自绘弹窗、给弹窗页面发消息、关闭当前弹窗；之后新增弹窗种类、调整弹窗交互或提示只需游戏热更新，不再需要升级 SDK。
+- 弹窗支持点击穿透，用于屏幕居中的提示；已有弹窗打开时提示叠加在弹窗上方，不影响弹窗操作。
+- 离座确认框标题改为「确认离座?」，与 Android / iOS 一致。
+- 宿主无需改动代码，把脚本地址换成 `@0.5.0` 即可；未升级的宿主继续可用，游戏检测到旧版 SDK 时沿用原来的弹窗流程。
 
 ## 宿主自绘退出确认（0.2.0）
 

@@ -8,10 +8,15 @@
   const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:transparent;';
   // 游戏经 message 发给 SDK 的消息类型与 SDK 能力，随会话下发给游戏，与原生 SDK 一致。
   const MESSAGE_DIALOG_PAGE_REGISTER = 'dialogPage.register';
+  // 通用弹窗通道：SDK 只负责展示页面与转发消息，弹窗种类与交互由热更新页面和游戏决定
+  const MESSAGE_DIALOG_OPEN = 'dialog.open';
+  const MESSAGE_DIALOG_SEND = 'dialog.send';
+  const MESSAGE_DIALOG_CLOSE = 'dialog.close';
   const CAPABILITIES = Object.freeze({
     protocolVersion: 1,
-    messages: Object.freeze([MESSAGE_DIALOG_PAGE_REGISTER]),
-    features: Object.freeze(['webDialogPage']),
+    messages: Object.freeze([MESSAGE_DIALOG_PAGE_REGISTER, MESSAGE_DIALOG_OPEN, MESSAGE_DIALOG_SEND, MESSAGE_DIALOG_CLOSE]),
+    // dialogPassThrough：dialog.open 支持 isPassThrough，弹窗不拦截点击（用于屏幕居中提示）
+    features: Object.freeze(['webDialogPage', 'dialogPassThrough']),
   });
   // 网页弹窗：铺满视口最上层的透明 iframe，与弹窗页面之间的消息来源标记
   const WEB_DIALOG_FRAME_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:transparent;color-scheme:normal;display:none;';
@@ -53,7 +58,7 @@
     betSpectate: '观战下注',
     followPrefix: '跟 ',
     betChip: '请加注筹码',
-    exitTitle: '退出游戏?',
+    exitTitle: '确认离座?',
     exitMessage: '当前游戏正在进行中，离开后游戏将结束并结算。',
     exitLeave: '离开',
     cancel: '取消',
@@ -917,8 +922,9 @@
 
   /**
    * 网页弹窗：游戏注册弹窗页面后，在视口最上层用透明沙箱 iframe（srcdoc）展示记录与规则、退出确认、下注抽屉，游戏 iframe 不动。
-   * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / betSelection / closed，SDK → 页面为 open / updateRecords / dismiss。
-   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed), onBetSelection(areaCode, amountCent), onDialogClosed(dialog), onPageReady() }。
+   * 与原生 SDK 协议一致：页面 → SDK 为 ready / recordsQuery / exitDecision / betSelection / closed，其他类型原样转给游戏；
+   * SDK → 页面为 open / updateRecords / dismiss，以及游戏经 dialog.send 指定的任意消息。
+   * handlers：{ onRecordsQuery(query), onExitDecision(isConfirmed), onBetSelection(areaCode, amountCent), onDialogClosed(dialog), onPageReady(), onPageMessage(type, payload) }。
    */
   function createWebDialogFrame(handlers) {
     let frame = null;
@@ -931,6 +937,8 @@
     // 页面 ready 时声明是否支持下注抽屉；旧版热更新页面不支持
     let hasBetDialog = false;
     let openedDialog = '';
+    // 当前展示的是点击穿透弹窗（提示）：iframe 不拦截点击、不锁定页面滚动，不阻塞下注抽屉
+    let isPassThroughShowing = false;
 
     /**
      * 保存游戏注册的页面并预加载；同版本重复注册忽略。
@@ -967,11 +975,12 @@
      * 移除 iframe，保留已注册页面以便下次重建。
      */
     function destroyFrame() {
-      if (isShowing) setPageScrollLocked(false);
+      if (isShowing && !isPassThroughShowing) setPageScrollLocked(false);
       frame?.remove();
       frame = null;
       isPageReady = false;
       isShowing = false;
+      isPassThroughShowing = false;
       pendingMessage = null;
       hasBetDialog = false;
       openedDialog = '';
@@ -988,13 +997,34 @@
      * 显示 iframe 并打开弹窗；页面未就绪时暂存，就绪后补发。
      */
     function open(dialog, content, mask) {
+      present(dialog, { dialog, content, mask: mask || true, isPassThrough: false }, false);
+    }
+
+    /**
+     * 打开点击穿透弹窗（提示）：已有普通弹窗展示时只转给页面叠加显示，不改变当前弹窗与点击拦截。
+     */
+    function openPassThrough(dialog, content) {
+      const payload = { dialog, content, mask: false, isPassThrough: true };
+      if (isShowing && !isPassThroughShowing) {
+        if (isPageReady) sendToPage('open', payload);
+        return;
+      }
+      present(dialog, payload, true);
+    }
+
+    /**
+     * 显示 iframe 并发送打开消息；普通弹窗锁定页面滚动，点击穿透弹窗让点击落到下方页面。
+     */
+    function present(dialog, payload, isPassThrough) {
       ensureFrame();
       if (!frame) return;
-      const message = { type: 'open', payload: { dialog, content, mask: mask || true } };
-      if (!isShowing) setPageScrollLocked(true);
+      const message = { type: 'open', payload };
+      if (!isPassThrough && (!isShowing || isPassThroughShowing)) setPageScrollLocked(true);
       isShowing = true;
+      isPassThroughShowing = isPassThrough;
       openedDialog = dialog;
       openSerial += 1;
+      frame.style.pointerEvents = isPassThrough ? 'none' : 'auto';
       frame.style.display = 'block';
       if (isPageReady) sendToPage(message.type, message.payload);
       else pendingMessage = message;
@@ -1005,9 +1035,22 @@
      */
     function hide() {
       if (!isShowing) return;
+      if (!isPassThroughShowing) setPageScrollLocked(false);
       isShowing = false;
-      setPageScrollLocked(false);
-      if (frame) frame.style.display = 'none';
+      isPassThroughShowing = false;
+      if (!frame) return;
+      frame.style.display = 'none';
+      frame.style.pointerEvents = 'auto';
+    }
+
+    /**
+     * 页面点击穿透弹窗（提示）已全部消失：仅当前仍是穿透展示时隐藏，普通弹窗打开后忽略；隐藏后补弹暂存的下注。
+     */
+    function handlePassThroughDone() {
+      if (!isShowing || !isPassThroughShowing) return;
+      const dialog = openedDialog;
+      hide();
+      if (dialog) handlers.onDialogClosed(dialog);
     }
 
     /**
@@ -1043,6 +1086,10 @@
         handlers.onExitDecision(Boolean(payload.isConfirmed));
       } else if (data.type === 'betSelection') {
         handleBetSelection(payload);
+      } else if (data.type === 'passThroughDone') {
+        handlePassThroughDone();
+      } else if (typeof data.type === 'string' && data.type) {
+        handlers.onPageMessage(data.type, payload);
       } else {
         console.warn('CocosGameWeb 忽略未知弹窗页面消息', data.type);
       }
@@ -1072,12 +1119,30 @@
     }
 
     /**
-     * 带动画关闭下注抽屉，页面回传 closed 后隐藏，超时强制隐藏。
+     * 带动画关闭当前弹窗，页面回传 closed 后隐藏，超时强制隐藏。
      */
-    function closeBet() {
-      if (!isShowing || openedDialog !== WEB_DIALOG_BET) return;
+    function closeDialog() {
+      if (!isShowing) return;
       sendToPage('dismiss', {});
       scheduleHideTimeout();
+    }
+
+    /**
+     * 带动画关闭下注抽屉；当前不是下注抽屉时忽略。
+     */
+    function closeBet() {
+      if (openedDialog === WEB_DIALOG_BET) closeDialog();
+    }
+
+    /**
+     * 把游戏消息原样发给页面；页面未就绪时丢弃。
+     */
+    function sendPageMessage(type, payload) {
+      if (!isPageReady) {
+        console.warn('CocosGameWeb 页面未就绪，丢弃游戏消息', type);
+        return;
+      }
+      sendToPage(type, payload);
     }
 
     /**
@@ -1107,12 +1172,16 @@
       openRules: (content, mask) => open('rules', content, mask),
       openConfirm: (content, mask) => open('confirm', content, mask),
       openBet: (content) => open(WEB_DIALOG_BET, content),
+      openDialog: (dialog, content, mask) => open(dialog, content, mask),
+      openPassThrough,
       closeBet,
+      closeDialog,
+      sendPageMessage,
       isBetSupported: () => isPageReady && hasBetDialog,
       // 已注册页面但尚未加载完成
       isPageLoading: () => Boolean(pageHtml) && !isPageReady,
-      // 能否立即打开下注抽屉：页面支持，并且没有展示记录与规则或退出确认等其他弹窗
-      canShowBet: () => isPageReady && hasBetDialog && (!isShowing || openedDialog === WEB_DIALOG_BET),
+      // 能否立即打开下注抽屉：页面支持，并且没有展示记录与规则或退出确认等其他弹窗（点击穿透的提示不算）
+      canShowBet: () => isPageReady && hasBetDialog && (!isShowing || isPassThroughShowing || openedDialog === WEB_DIALOG_BET),
       updateRecords: (records) => {
         if (isShowing && isPageReady) sendToPage('updateRecords', records);
       },
@@ -1148,6 +1217,7 @@
         if (dialog !== WEB_DIALOG_BET) showPendingWebBet();
       },
       onPageReady: () => showPendingWebBet(),
+      onPageMessage: (type, payload) => context.sendResult({ type: 'dialogMessage', name: type, payload }),
     });
 
     function sendRecordsQuery(action, query) {
@@ -1324,6 +1394,32 @@
       webDialog.release();
     }
 
+    /**
+     * 游戏请求打开任意热更新弹窗 { dialog, content, isPassThrough }；未注册页面时忽略。
+     */
+    function openGameDialog(payload) {
+      const dialog = readString(payload, 'dialog');
+      if (!dialog || !webDialog.isAvailable()) {
+        console.warn('CocosGameWeb 当前不能打开热更新弹窗', dialog);
+        return;
+      }
+      const content = payload.content && typeof payload.content === 'object' ? payload.content : {};
+      if (payload.isPassThrough === true) webDialog.openPassThrough(dialog, content);
+      else webDialog.openDialog(dialog, content, context.dialogMask);
+    }
+
+    /**
+     * 游戏发给热更新页面的消息 { type, payload }，SDK 不解析内容。
+     */
+    function sendGameDialogMessage(payload) {
+      const type = readString(payload, 'type');
+      if (!type) {
+        console.warn('CocosGameWeb 忽略缺少 type 的页面消息', payload);
+        return;
+      }
+      webDialog.sendPageMessage(type, payload.payload && typeof payload.payload === 'object' ? payload.payload : {});
+    }
+
     return Object.freeze({
       handle,
       dismissAll,
@@ -1334,6 +1430,9 @@
       refreshRecords,
       relocateBetCard,
       registerDialogPage: webDialog.register,
+      openGameDialog,
+      sendGameDialogMessage,
+      closeGameDialog: webDialog.closeDialog,
     });
   }
 
@@ -1443,7 +1542,11 @@
      * 分发游戏经 message 发来的消息，未知类型记录后忽略（新游戏可能运行在旧 SDK 上）。
      */
     function handleGameMessage(name, payload) {
-      if (name === MESSAGE_DIALOG_PAGE_REGISTER) hostDialogs?.registerDialogPage(payload);
+      const data = payload && typeof payload === 'object' ? payload : {};
+      if (name === MESSAGE_DIALOG_PAGE_REGISTER) hostDialogs?.registerDialogPage(data);
+      else if (name === MESSAGE_DIALOG_OPEN && !isFullscreen) hostDialogs?.openGameDialog(data);
+      else if (name === MESSAGE_DIALOG_SEND) hostDialogs?.sendGameDialogMessage(data);
+      else if (name === MESSAGE_DIALOG_CLOSE) hostDialogs?.closeGameDialog();
       else console.warn('忽略未知游戏消息', { name, payload });
     }
 
