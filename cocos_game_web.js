@@ -5,7 +5,9 @@
   const HOST_MESSAGE_SOURCE = 'cocos-game-host';
   const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
   const FULLSCREEN_STYLE = 'position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483647;background:#000;';
-  const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;background:transparent;';
+  const EMBEDDED_STYLE = 'display:block;width:100%;height:100%;border:0;';
+  // 游戏页就绪前的 iframe 底色，与游戏加载遮罩底色一致，避免页面加载期间透出宿主白底
+  const LOADING_BACKGROUND = '#131a1a';
   // 游戏经 message 发给 SDK 的消息类型与 SDK 能力，随会话下发给游戏，与原生 SDK 一致。
   const MESSAGE_DIALOG_PAGE_REGISTER = 'dialogPage.register';
   // 通用弹窗通道：SDK 只负责展示页面与转发消息，弹窗种类与交互由热更新页面和游戏决定
@@ -1499,6 +1501,7 @@
     let miniBackgroundColor;
     let bodyOverflow = '';
     let isGameStarted = false;
+    let isFrameReady = false;
     const uiSwitches = {
       showBackButton: options.showBackButton !== false,
       showFullscreenButton: options.showFullscreenButton !== false,
@@ -1535,7 +1538,16 @@
         document.body.style.overflow = bodyOverflow;
       }
       iframe.style.cssText = isFullscreen ? FULLSCREEN_STYLE : EMBEDDED_STYLE;
+      applyFrameBackground();
       notifyFullscreenState();
+    }
+
+    /**
+     * 按状态设置 iframe 底色：迷你条用宿主底色，游戏页就绪前用加载底色，之后透明；全屏样式自带黑底。
+     */
+    function applyFrameBackground() {
+      if (isFullscreen) return;
+      iframe.style.background = isMiniMode ? miniBackgroundColor || MINI_DEFAULT_BACKGROUND : isFrameReady ? 'transparent' : LOADING_BACKGROUND;
     }
 
     /**
@@ -1572,7 +1584,7 @@
       miniBackgroundColor = backgroundColor;
       if (isMiniMode) setFullscreen(false);
       // 容器高度常为小数，画布取整后露出的边缘用宿主底色填充，避免透出黑线
-      iframe.style.background = isMiniMode ? miniBackgroundColor || MINI_DEFAULT_BACKGROUND : 'transparent';
+      applyFrameBackground();
       postMiniMode();
     }
 
@@ -1709,6 +1721,8 @@
       if (event.source !== iframe.contentWindow || event.origin !== gameOrigin) return;
       if (!data || data.source !== GAME_MESSAGE_SOURCE) return;
       if (data.type === 'ready') {
+        isFrameReady = true;
+        applyFrameBackground();
         postToGame('session', {
           session: options.session,
           ui: {
@@ -1764,6 +1778,7 @@
     }
 
     global.addEventListener('message', handleMessage);
+    applyFrameBackground();
     options.container.appendChild(iframe);
     return Object.freeze({
       /**

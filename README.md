@@ -12,7 +12,7 @@
 <script src="https://niuniu-web-test.pages.dev/sdk/cocos_game_web.js"></script>
 
 <!-- 方式二：固定版本 CDN -->
-<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.5.0/cocos_game_web.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/eathwinster-jk/cocos-game-h5-sdk@0.5.1/cocos_game_web.js"></script>
 ```
 
 ## 快速开始
@@ -222,6 +222,11 @@ const game = CocosGameWeb.open({
 - 弹窗支持点击穿透，用于屏幕居中的提示；已有弹窗打开时提示叠加在弹窗上方，不影响弹窗操作。
 - 离座确认框标题改为「确认离座?」，与 Android / iOS 一致。
 - 宿主无需改动代码，把脚本地址换成 `@0.5.0` 即可；未升级的宿主继续可用，游戏检测到旧版 SDK 时沿用原来的弹窗流程。
+
+## 加载期底色（0.5.1）
+
+- 游戏页面加载完成前，游戏区域显示与加载页一致的深色底（`#131a1a`），不再透出宿主页面的白底；游戏页就绪后恢复透明，迷你条底色与全屏行为不变。
+- 宿主无需改动代码，把脚本地址换成 `@0.5.1` 即可。
 
 ## 宿主自绘退出确认（0.2.0）
 
